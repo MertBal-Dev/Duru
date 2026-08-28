@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Baloo_2, Nunito_Sans } from "next/font/google";
 import PWA from "@/components/PWA";
+import Kapi from "@/components/Kapi";
+import { AtolyeSaglayici } from "@/lib/atolye";
 import "./globals.css";
 
 /* Başlık yazısı — yuvarlak, oyuncak gibi, karakterli */
@@ -74,7 +76,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         <PWA />
-        {children}
+        <AtolyeSaglayici>
+          <Kapi>{children}</Kapi>
+        </AtolyeSaglayici>
       </body>
     </html>
   );

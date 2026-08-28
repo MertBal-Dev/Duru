@@ -47,7 +47,8 @@ export default function Tuval({
   onKaydet,
   kaydediliyor = false,
 }: {
-  onKaydet: (veri: string) => void;
+  /** PNG dosyası (Storage'a yüklenecek) ve önizleme için geçici adres */
+  onKaydet: (png: Blob, onizleme: string) => void;
   kaydediliyor?: boolean;
 }) {
   const tuvalRef = useRef<HTMLCanvasElement>(null);
@@ -392,10 +393,16 @@ export default function Tuval({
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, KAYIT_BOYUTU, KAYIT_BOYUTU);
     ctx.drawImage(kaynak, 0, 0, KAYIT_BOYUTU, KAYIT_BOYUTU);
-    try {
-      localStorage.removeItem(TASLAK_ANAHTARI);
-    } catch { /* önemsiz */ }
-    onKaydet(hedef.toDataURL("image/png"));
+
+    hedef.toBlob((png) => {
+      if (!png) return;
+      try {
+        localStorage.removeItem(TASLAK_ANAHTARI);
+      } catch {
+        /* önemsiz */
+      }
+      onKaydet(png, URL.createObjectURL(png));
+    }, "image/png");
   }
 
   /* ---------- Arayüz parçaları ---------- */

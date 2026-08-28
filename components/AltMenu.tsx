@@ -13,6 +13,7 @@ const BOLUMLER: { yol: string; ad: string; ikon: IkonAdi }[] = [
   { yol: "/ciz", ad: "Çiz", ikon: "palet" },
   { yol: "/muze", ad: "Müze", ikon: "cerceve" },
   { yol: "/kitaplik", ad: "Kitaplar", ikon: "kitap" },
+  { yol: "/ben", ad: "Ben", ikon: "yildiz" },
 ];
 
 export default function AltMenu() {

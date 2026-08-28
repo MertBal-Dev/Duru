@@ -5,47 +5,49 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import Ikon from "@/components/Ikon";
 import AltMenu from "@/components/AltMenu";
-import { cerceveNo, useDepo, yeniId } from "@/lib/depo";
+import { cerceveNo, useAtolye } from "@/lib/atolye";
 
 export default function KitapSayfasi() {
   const { id } = useParams<{ id: string }>();
-  const { depo, hazir, kitapGuncelle } = useDepo();
-  const kitap = depo.kitaplar.find((k) => k.id === id);
+  const { cizimler, kitaplar, kitapAdiDegistir, sayfaEkle, sayfaSil, sayfaYaz, sayfaResmi } =
+    useAtolye();
+  const kitap = kitaplar.find((k) => k.id === id);
 
   const [no, setNo] = useState(0);
   const [metin, setMetin] = useState("");
   const [secici, setSecici] = useState(false);
-  /* Sayfa hangi yöne çevriliyor — animasyonun yönünü belirler */
   const [yon, setYon] = useState<"ileri" | "geri">("ileri");
   const [okuma, setOkuma] = useState(false);
   const [durum, setDurum] = useState<"bos" | "yaziliyor" | "kaydedildi">("bos");
   const [okunuyor, setOkunuyor] = useState(false);
-  const yuklendi = useRef(false);
-  /* Henüz diske yazılmamış metin. Sayfa değişmeden önce mutlaka boşaltılır,
-     yoksa hızlı yazıp hemen sayfa çeviren biri yazdığını kaybeder. */
+
+  /* Henüz veritabanına yazılmamış metin. Sayfa değişmeden önce
+     mutlaka boşaltılır, yoksa hızlı yazıp sayfa çeviren yazdığını kaybeder. */
   const bekleyenRef = useRef<{ sayfaId: string; metin: string } | null>(null);
+
+  const sayfa = kitap?.sayfalar[no];
+
+  useEffect(() => {
+    if (sayfa) setMetin(sayfa.metin);
+  }, [sayfa?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function hemenKaydet() {
     const b = bekleyenRef.current;
     if (!b || !kitap) return;
     bekleyenRef.current = null;
-    kitapGuncelle(kitap.id, (k) => ({
-      ...k,
-      sayfalar: k.sayfalar.map((s) =>
-        s.id === b.sayfaId ? { ...s, metin: b.metin } : s,
-      ),
-    }));
+    sayfaYaz(kitap.id, b.sayfaId, b.metin);
     setDurum("kaydedildi");
   }
 
-  function sayfayaGit(hedef: number) {
-    hemenKaydet();
-    setYon(hedef > no ? "ileri" : "geri");
-    setNo(hedef);
-    sesiDurdur();
-  }
+  /* Yazmayı bıraktıktan 600ms sonra kaydet — her tuşta değil */
+  useEffect(() => {
+    if (!bekleyenRef.current) return;
+    setDurum("yaziliyor");
+    const z = setTimeout(hemenKaydet, 600);
+    return () => clearTimeout(z);
+  }, [metin]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ---------- Sesli okuma (tarayıcının kendi sesi, ücretsiz) ---------- */
+  /* ---------- Sesli okuma ---------- */
 
   function sesiDurdur() {
     if (typeof window === "undefined" || !window.speechSynthesis) return;
@@ -55,48 +57,51 @@ export default function KitapSayfasi() {
 
   function sesliOku(yazi: string) {
     if (typeof window === "undefined" || !window.speechSynthesis) return;
-    if (okunuyor) {
-      sesiDurdur();
-      return;
-    }
+    if (okunuyor) return sesiDurdur();
     const s = new SpeechSynthesisUtterance(yazi);
     s.lang = "tr-TR";
-    s.rate = 0.92; // çocuk için biraz yavaş
+    s.rate = 0.92;
     s.onend = () => setOkunuyor(false);
     s.onerror = () => setOkunuyor(false);
     window.speechSynthesis.speak(s);
     setOkunuyor(true);
   }
 
-  /* Sayfadan ayrılırken ses devam etmesin */
   useEffect(() => () => sesiDurdur(), []);
 
-  const sayfa = kitap?.sayfalar[no];
+  /* ---------- Gezinme ---------- */
 
-  /* Sayfa değişince metni tazele */
-  useEffect(() => {
-    if (sayfa) setMetin(sayfa.metin);
-  }, [sayfa?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  function sayfayaGit(hedef: number) {
+    hemenKaydet();
+    setYon(hedef > no ? "ileri" : "geri");
+    setNo(hedef);
+    sesiDurdur();
+  }
 
-  /* Yazarken kaydet — her tuşta değil, yazmayı bıraktıktan 600ms sonra.
-     Depoda resimler de olduğu için her tuşta kaydetmek yavaşlatırdı. */
-  useEffect(() => {
-    if (!kitap || !sayfa) return;
-    if (!yuklendi.current) {
-      yuklendi.current = true;
-      return;
-    }
-    if (metin === sayfa.metin) {
-      // Sadece BU sayfanın bekleyenini temizle — başka sayfanınkine dokunma
-      if (bekleyenRef.current?.sayfaId === sayfa.id) bekleyenRef.current = null;
-      return;
-    }
-    setDurum("yaziliyor");
-    const z = setTimeout(hemenKaydet, 600);
-    return () => clearTimeout(z);
-  }, [metin]); // eslint-disable-line react-hooks/exhaustive-deps
+  async function yeniSayfa() {
+    hemenKaydet();
+    const oncekiSayi = kitap?.sayfalar.length ?? 0;
+    await sayfaEkle(kitap!.id);
+    setYon("ileri");
+    setNo(oncekiSayi);
+  }
 
-  if (hazir && !kitap) {
+  function buSayfayiSil() {
+    if (!kitap || !sayfa || kitap.sayfalar.length <= 1) return;
+    bekleyenRef.current = null;
+    sayfaSil(kitap.id, sayfa.id);
+    setYon("geri");
+    setNo((n) => Math.max(0, n - 1));
+  }
+
+  function okumayaGec() {
+    hemenKaydet();
+    setOkuma(true);
+  }
+
+  /* ---------- Bulunamadı / yükleniyor ---------- */
+
+  if (!kitap) {
     return (
       <>
         <main className="mx-auto w-full max-w-lg flex-1 px-4 pt-8">
@@ -112,7 +117,7 @@ export default function KitapSayfasi() {
     );
   }
 
-  if (!kitap || !sayfa) {
+  if (!sayfa) {
     return (
       <>
         <main className="flex-1" />
@@ -121,54 +126,16 @@ export default function KitapSayfasi() {
     );
   }
 
-  const resim = depo.cizimler.find((c) => c.id === sayfa.cizimId);
+  const resim = cizimler.find((c) => c.id === sayfa.cizimId);
   const sonSayfa = kitap.sayfalar.length - 1;
-
-  function sayfaEkle() {
-    // Önce bekleyen yazıyı kaydet — yoksa bu sayfada yazdığı kaybolur
-    hemenKaydet();
-    kitapGuncelle(kitap!.id, (k) => ({
-      ...k,
-      sayfalar: [...k.sayfalar, { id: yeniId(), metin: "" }],
-    }));
-    setYon("ileri");
-    setNo(kitap!.sayfalar.length);
-  }
-
-  function sayfaSil() {
-    if (kitap!.sayfalar.length <= 1) return;
-    const silinen = sayfa!.id;
-    bekleyenRef.current = null; // silinen sayfanın yazısını geri yazma
-    kitapGuncelle(kitap!.id, (k) => ({
-      ...k,
-      sayfalar: k.sayfalar.filter((s) => s.id !== silinen),
-    }));
-    setYon("geri");
-    setNo((n) => Math.max(0, n - 1));
-  }
-
-  /* Okuma moduna geçmeden de kaydet — okurken son yazdığını görsün */
-  function okumayaGec() {
-    hemenKaydet();
-    setOkuma(true);
-  }
-
-  function resimSec(cizimId?: string) {
-    kitapGuncelle(kitap!.id, (k) => ({
-      ...k,
-      sayfalar: k.sayfalar.map((s) => (s.id === sayfa!.id ? { ...s, cizimId } : s)),
-      kapakCizimId: k.kapakCizimId ?? cizimId,
-    }));
-    setSecici(false);
-  }
 
   return (
     <>
       <main className="giris mx-auto w-full max-w-lg flex-1 px-4 pt-5 pb-4">
-        {/* ---------- Başlık ---------- */}
         <header className="mb-4 flex items-center gap-3">
           <Link
             href="/kitaplik"
+            onClick={hemenKaydet}
             aria-label="Kitaplığa dön"
             className="clay flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center text-mor transition-transform duration-200 active:translate-y-1"
           >
@@ -177,83 +144,76 @@ export default function KitapSayfasi() {
           <input
             className="clay-input font-display !text-[20px] font-bold"
             value={kitap.baslik}
-            onChange={(e) =>
-              kitapGuncelle(kitap.id, (k) => ({ ...k, baslik: e.target.value }))
-            }
+            onChange={(e) => kitapAdiDegistir(kitap.id, e.target.value)}
             aria-label="Kitabın adı"
             maxLength={45}
           />
         </header>
 
-        {/* ---------- Sayfa ----------
-            key={sayfa.id} sayesinde sayfa değişince bileşen yeniden
-            bağlanıyor, animasyon da her seferinde baştan çalışıyor. */}
+        {/* ---------- Sayfa ---------- */}
         <div className="perspektif mb-3">
-        <section key={sayfa.id} className={`clay p-4 sayfa-${yon}`}>
-          {/* Resim alanı */}
-          {resim ? (
-            <div className={`cerceve cerceve-n${cerceveNo(resim.id)} mb-4`}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={resim.veri}
-                alt={resim.baslik}
-                className="aspect-square w-full rounded-[12px] bg-white object-cover"
-              />
-              <div className="mt-2 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSecici(true)}
-                  className="clay-btn kucuk beyaz flex-1"
-                >
-                  Resmi değiştir
-                </button>
-                <button
-                  type="button"
-                  onClick={() => resimSec(undefined)}
-                  className="clay-btn kucuk beyaz"
-                  aria-label="Resmi kaldır"
-                >
-                  <Ikon ad="cop" boyut={17} />
-                </button>
+          <section key={sayfa.id} className={`clay p-4 sayfa-${yon}`}>
+            {resim ? (
+              <div className={`cerceve cerceve-n${cerceveNo(resim.id)} mb-4`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={resim.url}
+                  alt={resim.baslik}
+                  className="aspect-square w-full rounded-[12px] bg-white object-cover"
+                />
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSecici(true)}
+                    className="clay-btn kucuk beyaz flex-1"
+                  >
+                    Resmi değiştir
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => sayfaResmi(kitap.id, sayfa.id, undefined)}
+                    className="clay-btn kucuk beyaz"
+                    aria-label="Resmi kaldır"
+                  >
+                    <Ikon ad="cop" boyut={17} />
+                  </button>
+                </div>
               </div>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setSecici(true)}
-              className="clay-soft mb-4 flex w-full cursor-pointer flex-col items-center gap-2 p-6 text-inksoft transition-colors hover:text-mor"
-            >
-              <span className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-gk6/15 text-gk6">
-                <Ikon ad="cerceve" boyut={26} />
-              </span>
-              <span className="font-display text-base font-bold">
-                Bu sayfaya müzenden bir resim koy
-              </span>
-            </button>
-          )}
+            ) : (
+              <button
+                type="button"
+                onClick={() => setSecici(true)}
+                className="clay-soft mb-4 flex w-full cursor-pointer flex-col items-center gap-2 p-6 text-inksoft transition-colors hover:text-mor"
+              >
+                <span className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-gk6/15 text-gk6">
+                  <Ikon ad="cerceve" boyut={26} />
+                </span>
+                <span className="font-display text-base font-bold">
+                  Bu sayfaya müzenden bir resim koy
+                </span>
+              </button>
+            )}
 
-          {/* Metin alanı */}
-          <label htmlFor="sayfa-metni" className="gizli-metin">
-            Sayfa {no + 1} metni
-          </label>
-          <textarea
-            id="sayfa-metni"
-            value={metin}
-            onChange={(e) => {
-              setMetin(e.target.value);
-              /* Bekleyeni efekte bırakmıyoruz: efekt bir sonraki render'da
-                 çalışıyor ve arada sayfa değiştirilirse yazı kayboluyordu.
-                 Tuşa basıldığı anda yakalıyoruz. */
-              bekleyenRef.current = { sayfaId: sayfa.id, metin: e.target.value };
-            }}
-            placeholder="Hikâyeni buraya yaz…"
-            rows={7}
-            className="clay-input resize-y leading-[1.7]"
-          />
-        </section>
+            <label htmlFor="sayfa-metni" className="gizli-metin">
+              Sayfa {no + 1} metni
+            </label>
+            <textarea
+              id="sayfa-metni"
+              value={metin}
+              onChange={(e) => {
+                setMetin(e.target.value);
+                /* Bekleyeni efekte bırakmıyoruz: efekt bir sonraki render'da
+                   çalışıyor ve arada sayfa değiştirilirse yazı kayboluyordu. */
+                bekleyenRef.current = { sayfaId: sayfa.id, metin: e.target.value };
+              }}
+              placeholder="Hikâyeni buraya yaz…"
+              rows={7}
+              className="clay-input resize-y leading-[1.7]"
+            />
+          </section>
         </div>
 
-        {/* ---------- Durum çubuğu: kaydedildi mi, kaç kelime ---------- */}
+        {/* ---------- Durum ---------- */}
         <div className="mb-3 flex items-center gap-3 px-1 text-[13px] font-bold">
           <span
             aria-live="polite"
@@ -287,7 +247,7 @@ export default function KitapSayfasi() {
           </button>
         </div>
 
-        {/* ---------- Sayfa gezinme ---------- */}
+        {/* ---------- Gezinme ---------- */}
         <div className="clay-soft flex items-center gap-2 p-2.5">
           <button
             type="button"
@@ -315,7 +275,7 @@ export default function KitapSayfasi() {
           ) : (
             <button
               type="button"
-              onClick={sayfaEkle}
+              onClick={yeniSayfa}
               className="clay-btn kucuk"
               aria-label="Yeni sayfa ekle"
             >
@@ -327,7 +287,7 @@ export default function KitapSayfasi() {
         {kitap.sayfalar.length > 1 && (
           <button
             type="button"
-            onClick={sayfaSil}
+            onClick={buSayfayiSil}
             className="mx-auto mt-3 flex cursor-pointer items-center gap-1.5 rounded-[12px] px-3 py-2 text-sm font-bold text-inksoft transition-colors hover:text-uyari"
           >
             <Ikon ad="cop" boyut={16} />
@@ -375,7 +335,7 @@ export default function KitapSayfasi() {
                 <div className={`cerceve cerceve-n${cerceveNo(resim.id)} mb-5`}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={resim.veri}
+                    src={resim.url}
                     alt={resim.baslik}
                     className="aspect-square w-full rounded-[12px] bg-white object-cover"
                   />
@@ -415,7 +375,7 @@ export default function KitapSayfasi() {
         </div>
       )}
 
-      {/* ---------- Müzeden resim seçici ---------- */}
+      {/* ---------- Resim seçici ---------- */}
       {secici && (
         <div
           className="fon-ac fixed inset-0 z-50 flex items-end justify-center bg-ink/45 p-3 backdrop-blur-sm sm:items-center"
@@ -430,10 +390,11 @@ export default function KitapSayfasi() {
           >
             <h2 className="mb-3 text-xl text-ink">Müzenden bir resim seç</h2>
 
-            {depo.cizimler.length === 0 ? (
+            {cizimler.length === 0 ? (
               <div className="clay-soft p-5 text-center">
                 <p className="mb-4 text-sm font-semibold text-inksoft">
-                  Müzende henüz resim yok. Önce bir çizim yap, sonra kitabına koyabilirsin.
+                  Müzende henüz resim yok. Önce bir çizim yap, sonra kitabına
+                  koyabilirsin.
                 </p>
                 <Link href="/ciz" className="clay-btn w-full">
                   <Ikon ad="kalem" boyut={19} />
@@ -442,17 +403,20 @@ export default function KitapSayfasi() {
               </div>
             ) : (
               <ul className="grid grid-cols-3 gap-2.5">
-                {depo.cizimler.map((c) => (
+                {cizimler.map((c) => (
                   <li key={c.id}>
                     <button
                       type="button"
-                      onClick={() => resimSec(c.id)}
+                      onClick={() => {
+                        sayfaResmi(kitap.id, sayfa.id, c.id);
+                        setSecici(false);
+                      }}
                       className={`cerceve cerceve-n${cerceveNo(c.id)} !p-1.5 block w-full cursor-pointer`}
                       aria-label={`${c.baslik} resmini bu sayfaya koy`}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={c.veri}
+                        src={c.url}
                         alt=""
                         className="aspect-square w-full rounded-[9px] bg-white object-cover"
                       />

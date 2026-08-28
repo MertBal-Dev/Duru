@@ -7,38 +7,37 @@ import Ikon from "@/components/Ikon";
 import AltMenu from "@/components/AltMenu";
 import Konfeti from "@/components/Konfeti";
 import IndirButonu from "@/components/IndirButonu";
-import { cerceveNo, seri, useDepo } from "@/lib/depo";
+import { cerceveNo, useAtolye } from "@/lib/atolye";
 import { gununGorevi } from "@/lib/gorevler";
 
 /* Seri bu sayılara ulaşınca konfeti at — her gün değil, hak edince */
 const DONUM_NOKTALARI = [3, 7, 14, 21, 30, 50, 75, 100];
 
 export default function Atolye() {
-  const { depo, hazir } = useDepo();
+  const { isim, cizimler, kitaplar, seri, bugunYapildi, hata } = useAtolye();
   const gorev = gununGorevi();
-  const gunSeri = seri(depo.gunler);
-  const sonCizimler = depo.cizimler.slice(0, 6);
+  const sonCizimler = cizimler.slice(0, 6);
 
   const [kutla, setKutla] = useState(false);
+  const [gorulenSeri, setGorulenSeri] = useState<number | null>(null);
 
-  /* Seri bir öncekinden büyükse kutla — aynı gün tekrar girince kutlamaz */
+  /* Seri bu oturumda arttıysa kutla. Kalıcı bir yere yazmıyoruz —
+     tek kaynak veritabanı, bu sadece anlık bir arayüz efekti. */
   useEffect(() => {
-    if (!hazir || gunSeri < 1) return;
-    let z: ReturnType<typeof setTimeout> | undefined;
-    try {
-      const onceki = Number(localStorage.getItem("duru.sonSeri") ?? 0);
-      if (gunSeri > onceki) {
-        localStorage.setItem("duru.sonSeri", String(gunSeri));
-        setKutla(true);
-        z = setTimeout(() => setKutla(false), 2600);
-      }
-    } catch {
-      /* hafıza kapalı — kutlamayı atla, sayfa normal çalışsın */
+    if (seri < 1) return;
+    if (gorulenSeri === null) {
+      setGorulenSeri(seri);
+      return;
     }
-    return () => clearTimeout(z);
-  }, [hazir, gunSeri]);
+    if (seri > gorulenSeri) {
+      setGorulenSeri(seri);
+      setKutla(true);
+      const z = setTimeout(() => setKutla(false), 2600);
+      return () => clearTimeout(z);
+    }
+  }, [seri, gorulenSeri]);
 
-  const donumNoktasi = kutla && DONUM_NOKTALARI.includes(gunSeri);
+  const donumNoktasi = kutla && DONUM_NOKTALARI.includes(seri);
 
   return (
     <>
@@ -60,11 +59,9 @@ export default function Atolye() {
             <p className="text-[12px] font-bold uppercase tracking-[0.12em] text-inksoft">
               Merhaba
             </p>
-            <h1 className="truncate text-[27px] text-ink">
-              {hazir ? depo.isim : " "}
-            </h1>
+            <h1 className="truncate text-[27px] text-ink">{isim}</h1>
           </div>
-          {gunSeri > 0 && (
+          {seri > 0 && (
             <div
               className={`clay-soft flex shrink-0 items-center gap-1.5 rounded-[16px] px-3 py-2 ${
                 kutla ? "seri-parla" : ""
@@ -72,7 +69,7 @@ export default function Atolye() {
             >
               <Ikon ad="yildiz" boyut={19} dolu className="text-gk3" />
               <span className="font-display text-lg font-extrabold tabular-nums text-ink">
-                {gunSeri}
+                {seri}
               </span>
               <span className="text-[11px] font-bold leading-3 text-inksoft">
                 gün
@@ -83,9 +80,17 @@ export default function Atolye() {
           )}
         </header>
 
+        {hata && (
+          <p
+            role="alert"
+            className="mb-4 rounded-[14px] border-[3px] border-uyari/30 bg-uyari/10 p-3 text-sm font-bold text-uyari"
+          >
+            {hata}
+          </p>
+        )}
+
         {/* ---------- Bugünün görevi ---------- */}
         <section className="clay relative mb-4 overflow-hidden p-5">
-          {/* Dekoratif renk lekeleri — içerik değil, ekran okuyucudan gizli */}
           <div
             aria-hidden="true"
             className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-gk1 opacity-20 blur-xl"
@@ -113,7 +118,7 @@ export default function Atolye() {
             Çizmeye başla
           </Link>
 
-          {hazir && depo.gunler[new Date().toISOString().slice(0, 10)] && (
+          {bugunYapildi && (
             <p className="mt-3 flex items-center justify-center gap-1.5 text-sm font-bold text-basari">
               <Ikon ad="onay" boyut={17} />
               Bugünkü çizimini yaptın!
@@ -121,40 +126,39 @@ export default function Atolye() {
           )}
         </section>
 
-        {/* ---------- İki kapı: Müze ve Kitaplık ---------- */}
+        {/* ---------- İki kapı ---------- */}
         <div className="mb-5 grid grid-cols-2 gap-3">
           <Link
             href="/muze"
-            className="clay group flex cursor-pointer flex-col gap-2 p-4 transition-transform duration-200 active:translate-y-1"
+            className="clay flex cursor-pointer flex-col gap-2 p-4 transition-transform duration-200 active:translate-y-1"
           >
             <span className="flex h-11 w-11 items-center justify-center rounded-[14px] bg-gk1/15 text-gk1">
               <Ikon ad="cerceve" boyut={24} />
             </span>
             <span className="font-display text-lg font-bold text-ink">Müzem</span>
             <span className="text-sm font-semibold text-inksoft">
-              {hazir ? `${depo.cizimler.length} çizim` : "…"}
+              {cizimler.length} çizim
             </span>
           </Link>
 
           <Link
             href="/kitaplik"
-            className="clay group flex cursor-pointer flex-col gap-2 p-4 transition-transform duration-200 active:translate-y-1"
+            className="clay flex cursor-pointer flex-col gap-2 p-4 transition-transform duration-200 active:translate-y-1"
           >
             <span className="flex h-11 w-11 items-center justify-center rounded-[14px] bg-gk5/15 text-gk5">
               <Ikon ad="kitap" boyut={24} />
             </span>
             <span className="font-display text-lg font-bold text-ink">Kitaplarım</span>
             <span className="text-sm font-semibold text-inksoft">
-              {hazir ? `${depo.kitaplar.length} kitap` : "…"}
+              {kitaplar.length} kitap
             </span>
           </Link>
         </div>
 
-        {/* ---------- Tablete indir (sadece kurulabiliyorsa görünür) ---------- */}
         <IndirButonu />
 
         {/* ---------- Son çizimler ---------- */}
-        {hazir && sonCizimler.length > 0 && (
+        {sonCizimler.length > 0 && (
           <section>
             <h2 className="mb-3 flex items-center justify-between text-lg text-ink">
               Son çizimlerin
@@ -175,7 +179,7 @@ export default function Atolye() {
                   <Link href="/muze" className="block cursor-pointer">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={c.veri}
+                      src={c.url}
                       alt={c.baslik || "Çizim"}
                       className="aspect-square w-full rounded-[10px] bg-white object-cover"
                     />
@@ -186,8 +190,8 @@ export default function Atolye() {
           </section>
         )}
 
-        {/* ---------- İlk kez giriliyorsa yol göster ---------- */}
-        {hazir && depo.cizimler.length === 0 && (
+        {/* ---------- İlk kez ---------- */}
+        {cizimler.length === 0 && (
           <section className="clay-soft mt-2 p-5 text-center">
             <div className="salin mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-[20px] bg-gk3/25 text-gk3">
               <Ikon ad="palet" boyut={32} />

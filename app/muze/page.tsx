@@ -4,39 +4,44 @@ import { useState } from "react";
 import Link from "next/link";
 import Ikon from "@/components/Ikon";
 import AltMenu from "@/components/AltMenu";
-import { cerceveNo, tarihYaz, useDepo } from "@/lib/depo";
+import { cerceveNo, tarihYaz, useAtolye } from "@/lib/atolye";
 
 export default function Muze() {
-  const { depo, hazir, kalpAt, cizimSil, cizimAdiDegistir } = useDepo();
+  const { cizimler, kalpAt, cizimSil, cizimAdiDegistir } = useAtolye();
   const [acikId, setAcikId] = useState<string | null>(null);
   const [silOnay, setSilOnay] = useState(false);
-  /* Kalbe basınca yukarı uçan geçici kalp — n her basışta artar ki
-     animasyon üst üste basıldığında da baştan çalışsın */
   const [ucan, setUcan] = useState<{ id: string; n: number } | null>(null);
+
+  const acik = cizimler.find((c) => c.id === acikId) ?? null;
 
   function kalpVer(id: string) {
     kalpAt(id);
     setUcan((o) => ({ id, n: o && o.id === id ? o.n + 1 : 1 }));
   }
 
-  const acik = depo.cizimler.find((c) => c.id === acikId) ?? null;
-
   function kapat() {
     setAcikId(null);
     setSilOnay(false);
   }
 
-  function indir(veri: string, ad: string) {
-    const a = document.createElement("a");
-    a.href = veri;
-    a.download = `${ad || "cizim"}.png`;
-    a.click();
+  async function indir(url: string, ad: string) {
+    try {
+      const yanit = await fetch(url);
+      const png = await yanit.blob();
+      const gecici = URL.createObjectURL(png);
+      const a = document.createElement("a");
+      a.href = gecici;
+      a.download = `${ad || "cizim"}.png`;
+      a.click();
+      URL.revokeObjectURL(gecici);
+    } catch {
+      /* indirme başarısızsa sessizce geç — kritik değil */
+    }
   }
 
   return (
     <>
       <main className="giris mx-auto w-full max-w-lg flex-1 px-4 pt-5 pb-4">
-        {/* ---------- Başlık ---------- */}
         <header className="mb-5 flex items-center gap-3">
           <Link
             href="/"
@@ -48,7 +53,7 @@ export default function Muze() {
           <div className="min-w-0 flex-1">
             <h1 className="text-[26px] text-ink">Müzem</h1>
             <p className="text-sm font-semibold text-inksoft">
-              {hazir ? `${depo.cizimler.length} çizim asılı` : "…"}
+              {cizimler.length} çizim asılı
             </p>
           </div>
           <Link href="/ciz" className="clay-btn kucuk">
@@ -57,8 +62,7 @@ export default function Muze() {
           </Link>
         </header>
 
-        {/* ---------- Boş müze ---------- */}
-        {hazir && depo.cizimler.length === 0 && (
+        {cizimler.length === 0 && (
           <section className="clay p-7 text-center">
             <div className="salin mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-[22px] bg-gk1/20 text-gk1">
               <Ikon ad="cerceve" boyut={38} />
@@ -74,10 +78,9 @@ export default function Muze() {
           </section>
         )}
 
-        {/* ---------- Galeri ---------- */}
-        {hazir && depo.cizimler.length > 0 && (
+        {cizimler.length > 0 && (
           <ul className="grid grid-cols-2 gap-3.5">
-            {depo.cizimler.map((c, i) => (
+            {cizimler.map((c, i) => (
               <li
                 key={c.id}
                 className={`cerceve cerceve-n${cerceveNo(c.id)} belir`}
@@ -90,7 +93,7 @@ export default function Muze() {
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={c.veri}
+                    src={c.url}
                     alt={c.baslik}
                     className="aspect-square w-full rounded-[12px] bg-white object-cover"
                   />
@@ -128,7 +131,7 @@ export default function Muze() {
         )}
       </main>
 
-      {/* ---------- Tek çizim görünümü ---------- */}
+      {/* ---------- Tek çizim ---------- */}
       {acik && (
         <div
           className="fon-ac fixed inset-0 z-50 flex items-end justify-center bg-ink/45 p-3 backdrop-blur-sm sm:items-center"
@@ -144,7 +147,7 @@ export default function Muze() {
             <div className={`cerceve cerceve-n${cerceveNo(acik.id)} mb-4`}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={acik.veri}
+                src={acik.url}
                 alt={acik.baslik}
                 className="w-full rounded-[12px] bg-white"
               />
@@ -178,7 +181,7 @@ export default function Muze() {
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => indir(acik.veri, acik.baslik)}
+                  onClick={() => indir(acik.url, acik.baslik)}
                   className="clay-btn kucuk beyaz flex-1"
                 >
                   <Ikon ad="indir" boyut={18} />

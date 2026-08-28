@@ -6,6 +6,51 @@ import { test, expect, type Page } from "@playwright/test";
    bomboş bir localStorage ile başlar. Testler birbirini etkilemez.
    ============================================================ */
 
+/* ------------------------------------------------------------
+   OTURUM
+   Artık her sayfa giriş gerektiriyor. Supabase ayarlanmadıysa
+   testler hata vermek yerine ATLANIR — böylece kurulum yapmadan
+   da takım çalıştırılabilir ve neyin eksik olduğu net görünür.
+   ------------------------------------------------------------ */
+
+const KURULU = Boolean(
+  process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+);
+const TEST_EPOSTA = process.env.TEST_EPOSTA ?? "test.atolye@example.com";
+const TEST_SIFRE = process.env.TEST_SIFRE ?? "atolye-test-123456";
+
+test.beforeEach(async ({ page }) => {
+  test.skip(
+    !KURULU,
+    "Supabase ayarlanmamış. .env.local içine NEXT_PUBLIC_SUPABASE_URL ve NEXT_PUBLIC_SUPABASE_ANON_KEY ekleyin.",
+  );
+
+  await page.goto("/giris");
+
+  // Önce giriş dene; hesap yoksa aç
+  await page.getByLabel("E‑posta").fill(TEST_EPOSTA);
+  await page.getByLabel("Şifre").fill(TEST_SIFRE);
+  await page.getByRole("button", { name: "Giriş yap", exact: true }).click();
+
+  const anaSayfa = page.getByText("Bugünün görevi");
+  const hataKutusu = page.getByRole("alert");
+
+  await Promise.race([
+    anaSayfa.waitFor({ state: "visible", timeout: 8000 }).catch(() => {}),
+    hataKutusu.waitFor({ state: "visible", timeout: 8000 }).catch(() => {}),
+  ]);
+
+  if (await hataKutusu.isVisible().catch(() => false)) {
+    await page.getByRole("tab", { name: "Hesap aç" }).click();
+    await page.getByLabel("Adın").fill("Test Sanatçı");
+    await page.getByLabel("E‑posta").fill(TEST_EPOSTA);
+    await page.getByLabel("Şifre").fill(TEST_SIFRE);
+    await page.getByRole("button", { name: "Hesabımı aç" }).click();
+  }
+
+  await expect(anaSayfa).toBeVisible({ timeout: 15000 });
+});
+
 /** Tuvale gerçek bir çizgi çizer (fare = pointer olayları) */
 async function cizgiCiz(page: Page) {
   const tuval = page.getByRole("img", { name: /Çizim alanı/i });

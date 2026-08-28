@@ -5,11 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Ikon from "@/components/Ikon";
 import AltMenu from "@/components/AltMenu";
-import { cerceveNo, tarihYaz, useDepo, yeniId } from "@/lib/depo";
+import { cerceveNo, tarihYaz, useAtolye } from "@/lib/atolye";
 
-/* Duru'ya söz verdiğimiz başlangıç kitabı: konuşabilen bir kedi.
-   İlk cümle hazır geliyor ama tamamen değiştirilebilir —
-   amaç boş sayfa korkusunu kaldırmak, hikâyeyi onun yerine yazmak değil. */
+/* Duru'ya söz verdiğimiz başlangıç kitabı. İlk cümle hazır geliyor
+   ama tamamen değiştirilebilir — amaç boş sayfa korkusunu kaldırmak. */
 const BASLANGIC_KITABI = {
   baslik: "Konuşabilen Kedim",
   ilkSayfa:
@@ -17,30 +16,27 @@ const BASLANGIC_KITABI = {
 };
 
 export default function Kitaplik() {
-  const { depo, hazir, kitapEkle, kitapGuncelle, kitapSil } = useDepo();
+  const { cizimler, kitaplar, kitapEkle, kitapSil } = useAtolye();
   const router = useRouter();
   const [yeniAd, setYeniAd] = useState("");
   const [silId, setSilId] = useState<string | null>(null);
+  const [calisiyor, setCalisiyor] = useState(false);
 
-  function kitapYap(baslik: string, ilkSayfa?: string) {
+  async function kitapYap(baslik: string, ilkSayfa?: string) {
     const ad = baslik.trim();
-    if (!ad) return;
-    const id = kitapEkle(ad);
-    if (ilkSayfa) {
-      kitapGuncelle(id, (k) => ({
-        ...k,
-        sayfalar: [{ id: yeniId(), metin: ilkSayfa }],
-      }));
-    }
+    if (!ad || calisiyor) return;
+    setCalisiyor(true);
+    const id = await kitapEkle(ad, ilkSayfa);
+    setCalisiyor(false);
     setYeniAd("");
-    router.push(`/kitap/${id}`);
+    if (id) router.push(`/kitap/${id}`);
   }
 
   function kapak(kitapId: string) {
-    const k = depo.kitaplar.find((x) => x.id === kitapId);
+    const k = kitaplar.find((x) => x.id === kitapId);
     if (!k) return null;
     const cid = k.kapakCizimId ?? k.sayfalar.find((s) => s.cizimId)?.cizimId;
-    return depo.cizimler.find((c) => c.id === cid) ?? null;
+    return cizimler.find((c) => c.id === cid) ?? null;
   }
 
   return (
@@ -57,7 +53,7 @@ export default function Kitaplik() {
           <div className="min-w-0 flex-1">
             <h1 className="text-[26px] text-ink">Kitaplarım</h1>
             <p className="text-sm font-semibold text-inksoft">
-              {hazir ? `${depo.kitaplar.length} kitap yazdın` : "…"}
+              {kitaplar.length} kitap yazdın
             </p>
           </div>
         </header>
@@ -83,7 +79,7 @@ export default function Kitaplik() {
             <button
               type="button"
               onClick={() => kitapYap(yeniAd)}
-              disabled={!yeniAd.trim()}
+              disabled={!yeniAd.trim() || calisiyor}
               className="clay-btn"
               aria-label="Kitabı oluştur"
             >
@@ -91,10 +87,13 @@ export default function Kitaplik() {
             </button>
           </div>
 
-          {hazir && depo.kitaplar.length === 0 && (
+          {kitaplar.length === 0 && (
             <button
               type="button"
-              onClick={() => kitapYap(BASLANGIC_KITABI.baslik, BASLANGIC_KITABI.ilkSayfa)}
+              onClick={() =>
+                kitapYap(BASLANGIC_KITABI.baslik, BASLANGIC_KITABI.ilkSayfa)
+              }
+              disabled={calisiyor}
               className="clay-btn pembe mt-3 w-full"
             >
               <Ikon ad="yildiz" boyut={19} dolu />
@@ -103,22 +102,23 @@ export default function Kitaplik() {
           )}
         </section>
 
-        {/* ---------- Kitap rafı ---------- */}
-        {hazir && depo.kitaplar.length === 0 && (
+        {/* ---------- Raf ---------- */}
+        {kitaplar.length === 0 && (
           <section className="clay-soft p-6 text-center">
-            <div className="salin mx-auto mb-3 flex h-18 w-18 items-center justify-center rounded-[22px] bg-gk5/20 p-4 text-gk5">
-              <Ikon ad="kitap" boyut={34} />
+            <div className="salin mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-[22px] bg-gk5/20 text-gk5">
+              <Ikon ad="kitap" boyut={32} />
             </div>
             <h2 className="mb-1 text-xl text-ink">Rafın boş</h2>
             <p className="text-sm font-semibold text-inksoft">
-              Bir kitap başlat — her gün bir sayfa yazsan bile bir ayda koca bir hikâyen olur.
+              Bir kitap başlat — her gün bir sayfa yazsan bile bir ayda koca bir hikâyen
+              olur.
             </p>
           </section>
         )}
 
-        {hazir && depo.kitaplar.length > 0 && (
+        {kitaplar.length > 0 && (
           <ul className="flex flex-col gap-3">
-            {depo.kitaplar.map((k, i) => {
+            {kitaplar.map((k, i) => {
               const kap = kapak(k.id);
               const yazili = k.sayfalar.filter((s) => s.metin.trim()).length;
               return (
@@ -137,7 +137,7 @@ export default function Kitaplik() {
                       {kap ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
-                          src={kap.veri}
+                          src={kap.url}
                           alt=""
                           className="h-full w-full rounded-[8px] bg-white object-cover"
                         />
@@ -168,7 +168,7 @@ export default function Kitaplik() {
                   </button>
 
                   {silId === k.id && (
-                    <div className="clay-soft absolute right-4 z-10 -mt-2 translate-y-16 p-3 shadow-xl">
+                    <div className="clay-soft pencere-ac absolute right-4 z-10 -mt-2 translate-y-16 p-3 shadow-xl">
                       <p className="mb-2 text-sm font-bold text-ink">Kitap silinsin mi?</p>
                       <div className="flex gap-2">
                         <button
