@@ -19,7 +19,8 @@ export default function KitapSayfasi() {
   const [yon, setYon] = useState<"ileri" | "geri">("ileri");
   const [okuma, setOkuma] = useState(false);
   const [durum, setDurum] = useState<"bos" | "yaziliyor" | "kaydedildi">("bos");
-  const [okunuyor, setOkunuyor] = useState(false);
+  /* Otomatik okuma: sayfayı sesli okur, bitince kendi kendine çevirir */
+  const [otomatik, setOtomatik] = useState(false);
 
   /* Henüz veritabanına yazılmamış metin. Sayfa değişmeden önce
      mutlaka boşaltılır, yoksa hızlı yazıp sayfa çeviren yazdığını kaybeder. */
@@ -52,22 +53,77 @@ export default function KitapSayfasi() {
   function sesiDurdur() {
     if (typeof window === "undefined" || !window.speechSynthesis) return;
     window.speechSynthesis.cancel();
-    setOkunuyor(false);
-  }
-
-  function sesliOku(yazi: string) {
-    if (typeof window === "undefined" || !window.speechSynthesis) return;
-    if (okunuyor) return sesiDurdur();
-    const s = new SpeechSynthesisUtterance(yazi);
-    s.lang = "tr-TR";
-    s.rate = 0.92;
-    s.onend = () => setOkunuyor(false);
-    s.onerror = () => setOkunuyor(false);
-    window.speechSynthesis.speak(s);
-    setOkunuyor(true);
   }
 
   useEffect(() => () => sesiDurdur(), []);
+
+  /* ---------- Otomatik okuma: sayfayı oku, bitince kendi çevir ---------- */
+
+  useEffect(() => {
+    if (!otomatik || !okuma || !sayfa) return;
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+
+    const sonu = (kitap?.sayfalar.length ?? 1) - 1;
+    const yazi = sayfa.metin.trim() || "Bu sayfa henüz boş.";
+    const s = new SpeechSynthesisUtterance(yazi);
+    s.lang = "tr-TR";
+    s.rate = 0.92;
+
+    s.onend = () => {
+      if (no < sonu) {
+        setYon("ileri");
+        setNo((n) => n + 1);
+      } else {
+        setOtomatik(false); // kitap bitti
+      }
+    };
+    s.onerror = () => setOtomatik(false);
+
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(s);
+
+    return () => window.speechSynthesis.cancel();
+    // sayfa.id değişince yeni sayfa okunur
+  }, [otomatik, okuma, sayfa?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ---------- Kaydırarak sayfa çevirme ----------
+     Kılavuz uyarısı: yatay kaydırma sistem hareketleriyle çakışabilir.
+     Bu yüzden ekran kenarlarından (iOS'ta "geri" bölgesi) başlayan
+     hareketleri yok sayıyoruz ve dikey kaydırmayı öncelikli tutuyoruz. */
+
+  const dokunRef = useRef<{ x: number; y: number } | null>(null);
+  const KENAR = 30;
+  const ESIK = 60;
+
+  function dokunBasla(e: React.PointerEvent) {
+    const en = window.innerWidth;
+    if (e.clientX < KENAR || e.clientX > en - KENAR) {
+      dokunRef.current = null;
+      return;
+    }
+    dokunRef.current = { x: e.clientX, y: e.clientY };
+  }
+
+  function dokunBitir(e: React.PointerEvent) {
+    const b = dokunRef.current;
+    dokunRef.current = null;
+    if (!b || !kitap) return;
+
+    const dx = e.clientX - b.x;
+    const dy = e.clientY - b.y;
+    // Belirgin ve baskın şekilde yatay olmalı — yoksa dikey kaydırmadır
+    if (Math.abs(dx) < ESIK || Math.abs(dx) < Math.abs(dy) * 1.6) return;
+
+    const sonu = kitap.sayfalar.length - 1;
+    if (dx < 0 && no < sonu) elleGit(no + 1);
+    else if (dx > 0 && no > 0) elleGit(no - 1);
+  }
+
+  /* Elle sayfa çevirince otomatik okuma durur — kullanıcı kontrolü önce gelir */
+  function elleGit(hedef: number) {
+    setOtomatik(false);
+    sayfayaGit(hedef);
+  }
 
   /* ---------- Gezinme ---------- */
 
@@ -317,22 +373,25 @@ export default function KitapSayfasi() {
               <Ikon ad="geri" boyut={22} />
             </button>
             <h2 className="min-w-0 flex-1 truncate text-xl text-ink">{kitap.baslik}</h2>
-            <button
-              type="button"
-              onClick={() => sesliOku(sayfa.metin || "Bu sayfa henüz boş.")}
-              aria-label={okunuyor ? "Okumayı durdur" : "Bana sesli oku"}
-              aria-pressed={okunuyor}
-              className={`clay-btn kucuk ${okunuyor ? "pembe" : "beyaz"}`}
-            >
-              <Ikon ad={okunuyor ? "cop" : "yildiz"} boyut={18} dolu={!okunuyor} />
-              {okunuyor ? "Dur" : "Oku"}
-            </button>
+            <span className="clay-soft shrink-0 rounded-[14px] px-3 py-2 font-display text-sm font-bold tabular-nums text-inksoft">
+              {no + 1}/{kitap.sayfalar.length}
+            </span>
           </div>
 
-          <div className="perspektif mx-auto flex w-full max-w-lg flex-1 overflow-y-auto">
-            <section key={sayfa.id} className={`clay w-full p-5 sayfa-${yon}`}>
+          {/* SAHNE: perspektif burada, kaydırma sayfanın kendisinde.
+              İkisi aynı öğede olursa tarayıcı 3B'yi düzleştiriyor. */}
+          <div className="kitap-sahne mx-auto flex min-h-0 w-full max-w-lg flex-1">
+            <section
+              key={sayfa.id}
+              onPointerDown={dokunBasla}
+              onPointerUp={dokunBitir}
+              onPointerCancel={() => (dokunRef.current = null)}
+              className={`kitap-sayfa sayfa-${yon} ${
+                yon === "ileri" ? "cilt-sol" : "cilt-sag"
+              } w-full p-6`}
+            >
               {resim && (
-                <div className={`cerceve cerceve-n${cerceveNo(resim.id)} mb-5`}>
+                <div className={`cerceve cerceve-n${cerceveNo(resim.id)} mb-6`}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={resim.url}
@@ -341,36 +400,61 @@ export default function KitapSayfasi() {
                   />
                 </div>
               )}
-              <p className="whitespace-pre-wrap text-[19px] leading-[1.75] text-ink">
+
+              {/* Satır uzunluğu 65-75 karakterle sınırlı (max-w-prose):
+                  uzun satırlar okumayı zorlaştırıyor. */}
+              <p
+                className={`kitap-metin mx-auto max-w-prose text-ink ${
+                  !resim && sayfa.metin.trim() ? "suslu" : ""
+                }`}
+              >
                 {sayfa.metin || (
                   <span className="italic text-inksoft">Bu sayfa henüz boş.</span>
                 )}
               </p>
+
+              <span className="sayfa-no">— {no + 1} —</span>
             </section>
           </div>
 
-          <div className="mx-auto flex w-full max-w-lg items-center gap-2 pt-3">
-            <button
-              type="button"
-              onClick={() => sayfayaGit(Math.max(0, no - 1))}
-              disabled={no === 0}
-              className="clay-btn beyaz"
-              aria-label="Önceki sayfa"
-            >
-              <Ikon ad="sol" boyut={20} />
-            </button>
-            <span className="flex-1 text-center font-display text-base font-bold tabular-nums text-ink">
-              {no + 1} / {kitap.sayfalar.length}
-            </span>
-            <button
-              type="button"
-              onClick={() => sayfayaGit(no + 1)}
-              disabled={no >= sonSayfa}
-              className="clay-btn beyaz"
-              aria-label="Sonraki sayfa"
-            >
-              <Ikon ad="sag" boyut={20} />
-            </button>
+          <div className="mx-auto w-full max-w-lg pt-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => elleGit(Math.max(0, no - 1))}
+                disabled={no === 0}
+                className="clay-btn beyaz"
+                aria-label="Önceki sayfa"
+              >
+                <Ikon ad="sol" boyut={20} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setOtomatik((o) => !o)}
+                aria-pressed={otomatik}
+                className={`clay-btn flex-1 ${otomatik ? "pembe" : ""}`}
+              >
+                <Ikon ad={otomatik ? "cop" : "yildiz"} boyut={19} dolu={!otomatik} />
+                {otomatik ? "Durdur" : "Bana oku"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => elleGit(no + 1)}
+                disabled={no >= sonSayfa}
+                className="clay-btn beyaz"
+                aria-label="Sonraki sayfa"
+              >
+                <Ikon ad="sag" boyut={20} />
+              </button>
+            </div>
+
+            <p className="kaydir-ipucu mt-2.5" aria-live="polite">
+              {otomatik
+                ? `Sana okuyorum · sayfa ${no + 1} / ${kitap.sayfalar.length}`
+                : `Sayfa ${no + 1} / ${kitap.sayfalar.length} · parmağınla kaydırarak çevir`}
+            </p>
           </div>
         </div>
       )}

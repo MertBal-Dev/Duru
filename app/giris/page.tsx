@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Ikon from "@/components/Ikon";
+import Baslik from "@/components/Baslik";
 import { supabase, bulutVar, hataCevir } from "@/lib/supabase";
 
 type Kip = "giris" | "kayit";
@@ -20,6 +22,14 @@ export default function GirisSayfasi() {
   const [calisiyor, setCalisiyor] = useState(false);
   const [hata, setHata] = useState<string | null>(null);
   const [bilgi, setBilgi] = useState<string | null>(null);
+
+  /* Karşılama sayfasındaki "Hesap aç" düğmesi buraya ?kip=kayit ile
+     geliyor; o zaman kayıt sekmesi açık başlasın. */
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("kip") === "kayit") {
+      setKip("kayit");
+    }
+  }, []);
 
   async function gonder(e: React.FormEvent) {
     e.preventDefault();
@@ -82,20 +92,21 @@ export default function GirisSayfasi() {
 
   return (
     <main className="giris mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-5 py-10">
-      {/* ---------- Logo ---------- */}
+      {/* ---------- Logo ve başlık ---------- */}
       <div className="mb-6 flex flex-col items-center text-center">
-        <div className="clay salin mb-4 flex h-24 w-24 items-center justify-center overflow-hidden !p-0">
+        <div className="clay mb-3 flex h-20 w-20 items-center justify-center overflow-hidden !p-0">
           <Image
             src="/logo.png"
             alt=""
-            width={192}
-            height={192}
+            width={160}
+            height={160}
             priority
             className="h-full w-full scale-[1.12] object-cover"
           />
         </div>
-        <h1 className="text-[30px] text-ink">Atölye</h1>
-        <p className="mt-1 text-sm font-semibold text-inksoft">
+        <h1 className="sr-only">Duru&apos;nun Atölyesi</h1>
+        <Baslik boyut="kucuk" />
+        <p className="mt-2 text-sm font-semibold text-inksoft">
           Çizimlerin ve kitapların seni bekliyor
         </p>
       </div>
@@ -235,6 +246,14 @@ export default function GirisSayfasi() {
       <p className="mt-5 text-center text-[13px] font-semibold text-inksoft">
         Çizimlerin sadece sana ait. Şifreni kimseyle paylaşma.
       </p>
+
+      <Link
+        href="/hosgeldin"
+        className="mx-auto mt-4 flex w-fit items-center gap-1.5 rounded-[12px] px-3 py-2 text-sm font-bold text-mor underline underline-offset-4"
+      >
+        <Ikon ad="geri" boyut={16} />
+        Geri dön
+      </Link>
     </main>
   );
 }

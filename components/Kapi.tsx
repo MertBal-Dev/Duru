@@ -12,7 +12,8 @@ import Ikon from "./Ikon";
    sadece arayüz tarafındaki karşılığı.
    ============================================================ */
 
-const ACIK_YOLLAR = ["/giris"];
+/* Giriş yapmadan görülebilen sayfalar */
+const ACIK_YOLLAR = ["/hosgeldin", "/giris"];
 
 export default function Kapi({ children }: { children: React.ReactNode }) {
   const { durum, tasiniyor } = useAtolye();
@@ -21,7 +22,8 @@ export default function Kapi({ children }: { children: React.ReactNode }) {
   const acikSayfa = ACIK_YOLLAR.includes(yol);
 
   useEffect(() => {
-    if (durum === "girissiz" && !acikSayfa) router.replace("/giris");
+    // Girişsiz kullanıcı önce renkli karşılama sayfasını görür
+    if (durum === "girissiz" && !acikSayfa) router.replace("/hosgeldin");
     if (durum === "hazir" && acikSayfa) router.replace("/");
   }, [durum, acikSayfa, router]);
 

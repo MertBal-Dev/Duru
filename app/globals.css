@@ -286,15 +286,35 @@ h1, h2, h3, h4 {
   perspective-origin: 50% 42%;
 }
 
+/* Sayfa cilde yaslanıp açılıyormuş gibi: dönerken hafifçe küçülür,
+   gölgesi koyudur, açılınca yerine oturur. */
 @keyframes sayfaIleri {
-  from { transform: rotateY(48deg) translateX(16%); opacity: 0.15; filter: brightness(0.82); }
-  60%  { filter: brightness(1.02); }
-  to   { transform: rotateY(0deg) translateX(0); opacity: 1; filter: brightness(1); }
+  from {
+    transform: rotateY(62deg) translateX(14%) scale(0.965);
+    opacity: 0.1;
+    filter: brightness(0.78);
+    box-shadow: -18px 0 26px -10px rgba(46, 16, 101, 0.5);
+  }
+  55% { filter: brightness(1.03); }
+  to {
+    transform: rotateY(0deg) translateX(0) scale(1);
+    opacity: 1;
+    filter: brightness(1);
+  }
 }
 @keyframes sayfaGeri {
-  from { transform: rotateY(-48deg) translateX(-16%); opacity: 0.15; filter: brightness(0.82); }
-  60%  { filter: brightness(1.02); }
-  to   { transform: rotateY(0deg) translateX(0); opacity: 1; filter: brightness(1); }
+  from {
+    transform: rotateY(-62deg) translateX(-14%) scale(0.965);
+    opacity: 0.1;
+    filter: brightness(0.78);
+    box-shadow: 18px 0 26px -10px rgba(46, 16, 101, 0.5);
+  }
+  55% { filter: brightness(1.03); }
+  to {
+    transform: rotateY(0deg) translateX(0) scale(1);
+    opacity: 1;
+    filter: brightness(1);
+  }
 }
 .sayfa-ileri {
   transform-origin: left center;
@@ -305,6 +325,100 @@ h1, h2, h3, h4 {
   transform-origin: right center;
   backface-visibility: hidden;
   animation: sayfaGeri 480ms cubic-bezier(0.25, 0.85, 0.3, 1) both;
+}
+
+/* ============================================================
+   OKUMA MODU — gerçek kitap hissi
+   Sahne (perspektif) ile kaydırma kabı AYRI olmalı: perspektif
+   veren öğeye overflow konursa tarayıcı 3B'yi düzleştiriyor ve
+   sayfa dönmüyor, sadece kayıyor.
+   ============================================================ */
+
+.kitap-sahne {
+  perspective: 1600px;
+  perspective-origin: 50% 45%;
+  /* overflow YOK — kaydırma içerideki .kitap-sayfa'da */
+}
+
+.kitap-sayfa {
+  --kagit: #fffdf7;
+  --cilt: rgba(46, 16, 101, 0.13);
+  position: relative;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--radius-clay);
+  background:
+    linear-gradient(180deg, #fffefb 0%, var(--kagit) 100%);
+  border: 3px solid #fff;
+  box-shadow:
+    inset -2px -3px 8px rgba(124, 58, 237, 0.05),
+    0 8px 0 rgba(124, 58, 237, 0.14),
+    0 20px 34px -16px rgba(46, 16, 101, 0.36);
+}
+
+/* Cilt gölgesi: gerçek kitapta sayfa dibe doğru koyulaşır.
+   Yön değişince gölge de karşı kenara geçer. */
+.kitap-sayfa::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  width: 26px;
+  pointer-events: none;
+  border-radius: var(--radius-clay) 0 0 var(--radius-clay);
+}
+.kitap-sayfa.cilt-sol::before {
+  inset-inline-start: 0;
+  background: linear-gradient(90deg, var(--cilt), transparent);
+}
+.kitap-sayfa.cilt-sag::before {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+  border-radius: 0 var(--radius-clay) var(--radius-clay) 0;
+  background: linear-gradient(270deg, var(--cilt), transparent);
+}
+
+/* Okuma yazısı — düzenleme alanından daha büyük ve ferah */
+.kitap-metin {
+  font-size: 20px;
+  /* Kılavuz: gövde metni için 1.5-1.75 satır yüksekliği */
+  line-height: 1.75;
+  letter-spacing: 0.003em;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/* İlk harf büyütmesi: resimsiz sayfa çıplak durmasın */
+.kitap-metin.suslu::first-letter {
+  float: left;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 3.1em;
+  line-height: 0.82;
+  padding: 6px 10px 0 0;
+  color: var(--color-mor);
+}
+
+/* Sayfa numarası — basılı kitaptaki gibi altta ortada */
+.sayfa-no {
+  display: block;
+  margin-top: 26px;
+  padding-top: 14px;
+  border-top: 2px dashed var(--color-line);
+  text-align: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-inksoft);
+}
+
+/* Kaydırma ipucu */
+.kaydir-ipucu {
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--color-inksoft);
+  opacity: 0.85;
 }
 
 /* ---------- Pencere (modal) açılışı ---------- */
@@ -428,6 +542,89 @@ h1, h2, h3, h4 {
   border: 3px solid var(--color-mor);
   box-shadow: 0 3px 0 rgba(46, 16, 101, 0.22);
 }
+
+/* ============================================================
+   KARŞILAMA SAHNESİ — unicorn, yıldızlar, bulutlar
+   Hepsi kodla çiziliyor: her ekranda net, dosya boyutu yok,
+   ve en önemlisi HAREKET EDİYOR.
+   ============================================================ */
+
+/* Gökyüzü */
+.gokyuzu {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 80% at 50% 0%, #ffe3f4 0%, transparent 55%),
+    radial-gradient(90% 60% at 12% 18%, #e5f0ff 0%, transparent 60%),
+    radial-gradient(90% 60% at 88% 10%, #f3e6ff 0%, transparent 60%);
+}
+
+/* Yıldızlar — sırayla parlıyor */
+@keyframes parilda {
+  0%, 100% { opacity: 0.18; transform: scale(0.72); }
+  50%      { opacity: 1;    transform: scale(1.12); }
+}
+.yildiz {
+  position: absolute;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 10px 2px rgba(255, 233, 150, 0.9);
+  animation: parilda var(--sure, 3s) ease-in-out var(--gecikme, 0s) infinite;
+}
+
+/* Bulutlar — yavaşça sürükleniyor */
+@keyframes suruklen {
+  from { transform: translateX(-12%); }
+  to   { transform: translateX(12%); }
+}
+.bulut {
+  position: absolute;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  filter: blur(1px);
+  animation: suruklen var(--sure, 26s) ease-in-out var(--gecikme, 0s) infinite alternate;
+}
+
+/* Unicorn — havada süzülüyor */
+@keyframes suzul {
+  0%, 100% { transform: translateY(0) rotate(-1.2deg); }
+  50%      { transform: translateY(-14px) rotate(1.2deg); }
+}
+.unicorn { animation: suzul 5s ease-in-out infinite; transform-origin: 50% 60%; }
+
+/* Boynuz ışıltısı */
+@keyframes boynuzParla {
+  0%, 100% { opacity: 0.35; }
+  50%      { opacity: 1; }
+}
+.boynuz-isik { animation: boynuzParla 2.4s ease-in-out infinite; }
+
+/* Yal dalgalanması */
+@keyframes yalDalga {
+  0%, 100% { transform: translateY(0) skewY(0deg); }
+  50%      { transform: translateY(-3px) skewY(-1.4deg); }
+}
+.yal { animation: yalDalga 4.2s ease-in-out infinite; transform-origin: 100% 50%; }
+
+/* Etrafta uçuşan pırıltılar */
+@keyframes pirilti {
+  0%   { opacity: 0; transform: translateY(6px) scale(0.5) rotate(0deg); }
+  35%  { opacity: 1; transform: translateY(-4px) scale(1) rotate(35deg); }
+  100% { opacity: 0; transform: translateY(-26px) scale(0.55) rotate(90deg); }
+}
+.pirilti {
+  position: absolute;
+  animation: pirilti var(--sure, 3.4s) ease-out var(--gecikme, 0s) infinite;
+}
+
+/* Gökkuşağı yayı — hafifçe nefes alıyor */
+@keyframes yayNefes {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 0.85; }
+}
+.gokkusagi-yay { animation: yayNefes 6s ease-in-out infinite; }
 
 /* ---------- Kaydediliyor nabzı ---------- */
 

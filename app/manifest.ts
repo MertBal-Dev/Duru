@@ -7,7 +7,8 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Duru'nun Atölyesi",
-    short_name: "Atölye",
+    // Ana ekranda ikonun altında yazan isim — "Atölye" değil, tam adı
+    short_name: "Duru'nun Atölyesi",
     description:
       "Duru'nun çizim müzesi ve kendi kitaplarını yazdığı atölye. Her gün yeni bir çizim görevi.",
     lang: "tr",
