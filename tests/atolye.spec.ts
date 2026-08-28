@@ -2,54 +2,22 @@ import { test, expect, type Page } from "@playwright/test";
 
 /* ============================================================
    DURU'NUN ATÖLYESİ — uçtan uca testler
-   Her test kendi tarayıcı bağlamında çalışır, yani her biri
-   bomboş bir localStorage ile başlar. Testler birbirini etkilemez.
+   Veriler artık Supabase'de. Testler gerçek bir hesapla,
+   gerçek veritabanına karşı çalışır.
    ============================================================ */
 
-/* ------------------------------------------------------------
-   OTURUM
-   Artık her sayfa giriş gerektiriyor. Supabase ayarlanmadıysa
-   testler hata vermek yerine ATLANIR — böylece kurulum yapmadan
-   da takım çalıştırılabilir ve neyin eksik olduğu net görünür.
-   ------------------------------------------------------------ */
+/* Oturum, "kurulum" projesinde bir kez açılıp dosyaya kaydediliyor
+   (bkz. tests/oturum.setup.ts ve playwright.config.ts). Testler o
+   oturumu paylaşır — Supabase'in kimlik doğrulama hız sınırına
+   takılmamak için.
 
-const KURULU = Boolean(
-  process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-);
-const TEST_EPOSTA = process.env.TEST_EPOSTA ?? "test.atolye@example.com";
-const TEST_SIFRE = process.env.TEST_SIFRE ?? "atolye-test-123456";
+   Hesap paylaşıldığı için veriler testler arasında birikir. Bu yüzden
+   her test KENDİ benzersiz adıyla veri üretir ve sadece onu doğrular;
+   "müze bomboş" gibi mutlak varsayımlar kullanılmaz. */
 
-test.beforeEach(async ({ page }) => {
-  test.skip(
-    !KURULU,
-    "Supabase ayarlanmamış. .env.local içine NEXT_PUBLIC_SUPABASE_URL ve NEXT_PUBLIC_SUPABASE_ANON_KEY ekleyin.",
-  );
-
-  await page.goto("/giris");
-
-  // Önce giriş dene; hesap yoksa aç
-  await page.getByLabel("E‑posta").fill(TEST_EPOSTA);
-  await page.getByLabel("Şifre").fill(TEST_SIFRE);
-  await page.getByRole("button", { name: "Giriş yap", exact: true }).click();
-
-  const anaSayfa = page.getByText("Bugünün görevi");
-  const hataKutusu = page.getByRole("alert");
-
-  await Promise.race([
-    anaSayfa.waitFor({ state: "visible", timeout: 8000 }).catch(() => {}),
-    hataKutusu.waitFor({ state: "visible", timeout: 8000 }).catch(() => {}),
-  ]);
-
-  if (await hataKutusu.isVisible().catch(() => false)) {
-    await page.getByRole("tab", { name: "Hesap aç" }).click();
-    await page.getByLabel("Adın").fill("Test Sanatçı");
-    await page.getByLabel("E‑posta").fill(TEST_EPOSTA);
-    await page.getByLabel("Şifre").fill(TEST_SIFRE);
-    await page.getByRole("button", { name: "Hesabımı aç" }).click();
-  }
-
-  await expect(anaSayfa).toBeVisible({ timeout: 15000 });
-});
+function benzersiz(on: string): string {
+  return `${on}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`;
+}
 
 /** Tuvale gerçek bir çizgi çizer (fare = pointer olayları) */
 async function cizgiCiz(page: Page) {
@@ -80,18 +48,11 @@ async function cizimYapVeAs(page: Page, ad: string) {
   await expect(page).toHaveURL(/\/muze/);
 }
 
-/** localStorage'a yazılana kadar bekler (sabit uyku değil, yeniden dener) */
-async function kaydedilmisMi(page: Page, arananMetin: string) {
-  await expect
-    .poll(
-      async () =>
-        page.evaluate(
-          (m) => (localStorage.getItem("duru.atolye.v1") ?? "").includes(m),
-          arananMetin,
-        ),
-      { timeout: 5000, message: `"${arananMetin}" localStorage'a yazılmadı` },
-    )
-    .toBe(true);
+/** Sayfayı yenileyip metnin gerçekten sunucudan geldiğini doğrular.
+    Eski sürümde localStorage okunuyordu; artık tek kaynak Supabase. */
+async function yenileVeDogrula(page: Page, metin: string | RegExp) {
+  await page.reload();
+  await expect(page.getByText(metin).first()).toBeVisible({ timeout: 20000 });
 }
 
 /* ------------------------------------------------------------ */
@@ -107,8 +68,9 @@ test("ana sayfa açılır, logo ve bugünün görevi görünür", async ({ page 
   const gorev = page.locator("section").first().locator("p").nth(1);
   await expect(gorev).not.toBeEmpty();
 
-  // İlk girişte yönlendirme kartı çıkmalı
-  await expect(page.getByText("Atölyen bomboş!")).toBeVisible();
+  // Müze ve kitaplık kapıları görünmeli
+  await expect(page.getByRole("link", { name: /Müzem/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Kitaplarım/ })).toBeVisible();
 });
 
 test("alt menü dört bölüme de gider", async ({ page }) => {
@@ -125,7 +87,10 @@ test("alt menü dört bölüme de gider", async ({ page }) => {
   await expect(page).toHaveURL(/\/kitaplik/);
 
   await menu.getByRole("link", { name: "Atölye" }).click();
-  await expect(page).toHaveURL(/localhost:3001\/$/);
+  await expect(page.getByText("Bugünün görevi")).toBeVisible();
+
+  await menu.getByRole("link", { name: "Ben" }).click();
+  await expect(page).toHaveURL(/\/ben/);
 });
 
 test("çizim yapılır ve müzeye asılır", async ({ page }) => {
@@ -141,12 +106,14 @@ test("çizim yapılır ve müzeye asılır", async ({ page }) => {
   await expect(page.getByText("Çizimin hazır!")).toBeVisible();
   await expect(page.getByAltText("Az önce yaptığın çizim")).toBeVisible();
 
-  await page.getByLabel("Çizimin adı").fill("Gökkuşağı Atı");
+  const ad = benzersiz("Gökkuşağı Atı");
+  await page.getByLabel("Çizimin adı").fill(ad);
   await page.getByRole("button", { name: /Müzeye as/i }).click();
 
-  await expect(page).toHaveURL(/\/muze/);
-  await expect(page.getByText("Gökkuşağı Atı")).toBeVisible();
-  await expect(page.getByText("1 çizim asılı")).toBeVisible();
+  // Kutlama ekranı, sonra müze
+  await expect(page.getByText("Müzene asıldı!")).toBeVisible({ timeout: 25000 });
+  await expect(page).toHaveURL(/\/muze/, { timeout: 15000 });
+  await expect(page.getByText(ad)).toBeVisible({ timeout: 20000 });
 });
 
 test("silgi, geri al ve temizle çalışır", async ({ page }) => {
@@ -196,49 +163,54 @@ test("renk ve fırça kalınlığı seçilebilir", async ({ page }) => {
 });
 
 test("müzede kalp verilir ve sayı artar", async ({ page }) => {
-  await cizimYapVeAs(page, "Kalpli Çizim");
+  const ad = benzersiz("Kalpli Çizim");
+  await cizimYapVeAs(page, ad);
 
-  const kalp = page.getByRole("button", { name: /kalp ver/i });
-  await expect(kalp).toBeVisible();
+  // Sadece BU çizimin kalbine bas — müzede başka çizimler de var
+  const kalp = page.getByRole("button", { name: new RegExp(`^${ad} çizimine kalp ver`) });
+  await expect(kalp).toBeVisible({ timeout: 20000 });
 
   await kalp.click();
-  await expect(page.getByRole("button", { name: /Şu an 1 kalp/i })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: new RegExp(`${ad}.*Şu an 1 kalp`) }),
+  ).toBeVisible();
 
-  await page.getByRole("button", { name: /kalp ver/i }).click();
-  await expect(page.getByRole("button", { name: /Şu an 2 kalp/i })).toBeVisible();
+  await page.getByRole("button", { name: new RegExp(`^${ad} çizimine kalp ver`) }).click();
+  await expect(
+    page.getByRole("button", { name: new RegExp(`${ad}.*Şu an 2 kalp`) }),
+  ).toBeVisible();
 });
 
-test("çizim sayfa yenilendikten sonra da durur", async ({ page }) => {
-  await cizimYapVeAs(page, "Kalıcı Kedi");
-  await kaydedilmisMi(page, "Kalıcı Kedi");
+test("çizim veritabanına kaydedilir, yenileyince durur", async ({ page }) => {
+  const ad = benzersiz("Kalıcı Kedi");
+  await cizimYapVeAs(page, ad);
 
-  await page.reload();
-  await expect(page.getByText("Kalıcı Kedi")).toBeVisible();
+  // Yenileme sunucudan taze veri çeker — gerçekten kaydedildiğinin kanıtı
+  await yenileVeDogrula(page, ad);
 });
 
-test("konuşan kedi kitabı açılır, yazılır ve kaydedilir", async ({ page }) => {
+test("kitap yazılır, kaydedilir ve yenileyince metin durur", async ({ page }) => {
+  const kitapAdi = benzersiz("Konuşabilen Kedim");
   await page.goto("/kitaplik");
+  await page.getByLabel("Yeni kitap başlat").fill(kitapAdi);
+  await page.getByRole("button", { name: "Kitabı oluştur" }).click();
+  await expect(page).toHaveURL(/\/kitap\//, { timeout: 20000 });
 
-  await page.getByRole("button", { name: /Konuşan kedi kitabıyla başla/i }).click();
-  await expect(page).toHaveURL(/\/kitap\//);
+  await expect(page.getByLabel("Kitabın adı")).toHaveValue(kitapAdi);
 
-  // Hazır ilk cümle gelmiş olmalı
-  await expect(page.getByLabel("Kitabın adı")).toHaveValue("Konuşabilen Kedim");
-  const metin = page.getByLabel("Sayfa 1 metni");
-  await expect(metin).not.toBeEmpty();
-
-  await metin.fill("Kedim bana bugün ilk kez konuştu ve çok şaşırdım.");
-  await kaydedilmisMi(page, "çok şaşırdım");
+  const cumle = `Kedim bana bugün ilk kez konuştu ${Date.now()}`;
+  await page.getByLabel("Sayfa 1 metni").fill(cumle);
+  await expect(page.getByText("Kaydedildi")).toBeVisible({ timeout: 15000 });
 
   await page.reload();
-  await expect(page.getByLabel("Sayfa 1 metni")).toHaveValue(/çok şaşırdım/);
+  await expect(page.getByLabel("Sayfa 1 metni")).toHaveValue(cumle, { timeout: 20000 });
 });
 
 test("kitaba sayfa eklenir ve sayfalar arasında gezilir", async ({ page }) => {
   await page.goto("/kitaplik");
-  await page.getByLabel("Yeni kitap başlat").fill("Orman Macerası");
+  await page.getByLabel("Yeni kitap başlat").fill(benzersiz("Orman Macerası"));
   await page.getByRole("button", { name: "Kitabı oluştur" }).click();
-  await expect(page).toHaveURL(/\/kitap\//);
+  await expect(page).toHaveURL(/\/kitap\//, { timeout: 20000 });
 
   await expect(page.getByText("Sayfa 1 / 1")).toBeVisible();
 
@@ -254,47 +226,57 @@ test("kitaba sayfa eklenir ve sayfalar arasında gezilir", async ({ page }) => {
 
 test("müzedeki çizim kitabın sayfasına resim olarak konur", async ({ page }) => {
   // Önce müzeye bir çizim as
-  await cizimYapVeAs(page, "Kitap Resmi");
+  const resimAdi = benzersiz("Kitap Resmi");
+  await cizimYapVeAs(page, resimAdi);
 
   // Sonra kitap yap ve resmi sayfaya koy
   await page.goto("/kitaplik");
-  await page.getByRole("button", { name: /Konuşan kedi kitabıyla başla/i }).click();
-  await expect(page).toHaveURL(/\/kitap\//);
+  await page.getByLabel("Yeni kitap başlat").fill(benzersiz("Resimli Kitap"));
+  await page.getByRole("button", { name: "Kitabı oluştur" }).click();
+  await expect(page).toHaveURL(/\/kitap\//, { timeout: 20000 });
 
   await page.getByRole("button", { name: /müzenden bir resim koy/i }).click();
-  await expect(page.getByRole("dialog", { name: /Müzenden resim seç/i })).toBeVisible();
+  const secici = page.getByRole("dialog", { name: /Müzenden resim seç/i });
+  await expect(secici).toBeVisible();
 
-  await page.getByRole("button", { name: /Kitap Resmi resmini bu sayfaya koy/i }).click();
+  await secici
+    .getByRole("button", { name: new RegExp(`^${resimAdi} resmini bu sayfaya koy`) })
+    .click();
 
-  await expect(page.getByAltText("Kitap Resmi")).toBeVisible();
+  await expect(page.getByAltText(resimAdi)).toBeVisible({ timeout: 20000 });
   await expect(page.getByRole("button", { name: "Resmi değiştir" })).toBeVisible();
 });
 
 test("çizim müzeden silinebilir", async ({ page }) => {
-  await cizimYapVeAs(page, "Silinecek Çizim");
+  const ad = benzersiz("Silinecek Çizim");
+  await cizimYapVeAs(page, ad);
 
-  await page.getByRole("button", { name: "Silinecek Çizim" }).first().click();
+  await page.getByRole("button", { name: ad, exact: true }).first().click();
   await expect(page.getByRole("dialog")).toBeVisible();
 
   await page.getByRole("button", { name: "Bu çizimi sil" }).click();
   await expect(page.getByText("Bu çizim müzeden kaldırılsın mı?")).toBeVisible();
 
   await page.getByRole("button", { name: "Evet, sil" }).click();
-  await expect(page.getByText("Duvarlar bomboş")).toBeVisible();
+
+  // Sadece BU çizim gitmeli — müzedeki diğerleri yerinde kalır
+  await expect(page.getByText(ad)).toBeHidden({ timeout: 20000 });
+  await yenileVeDogrula(page, "çizim asılı");
+  await expect(page.getByText(ad)).toBeHidden();
 });
 
 test("seri sayacı çizim yapınca görünür", async ({ page }) => {
-  await cizimYapVeAs(page, "Seri Testi");
+  await cizimYapVeAs(page, benzersiz("Seri Testi"));
   await page.goto("/");
 
-  await expect(page.getByText("Bugünkü çizimini yaptın!")).toBeVisible();
+  await expect(page.getByText("Bugünkü çizimini yaptın!")).toBeVisible({ timeout: 20000 });
   await expect(page.getByText("gün", { exact: false }).first()).toBeVisible();
 });
 
 /* ---------------- Animasyonlar ---------------- */
 
 test("giriş animasyonu galeri kartlarına uygulanıyor", async ({ page }) => {
-  await cizimYapVeAs(page, "Animasyon Testi");
+  await cizimYapVeAs(page, benzersiz("Animasyon Testi"));
 
   const kart = page.locator(".belir").first();
   await expect(kart).toBeVisible();

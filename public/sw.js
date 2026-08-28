@@ -1,43 +1,67 @@
 /* ============================================================
    SERVİS ÇALIŞANI
-   Strateji: önce ağ, olmazsa önbellek.
-   Böylece internet varken hep güncel içerik gelir, internet
-   yokken (tablette, arabada, uçakta) site yine de açılır.
 
-   Duru'nun çizimleri zaten cihazın kendi hafızasında durduğu için
-   çevrimdışıyken de çizim yapabilir ve kaydedebilir.
+   ÖNEMLİ KURAL: HTML sayfaları ASLA önbelleğe alınmaz.
+   Eski sürümde alınıyordu ve yeni yayın çıkınca tablette eski
+   sayfa gösteriliyordu ("güncellemeyi göremiyorum" sorunu).
+
+   Strateji:
+   - Sayfa istekleri (navigate): her zaman ağdan. Ağ yoksa
+     çevrimdışı kabuğu gösterilir.
+   - /_next/static/ dosyaları: içerik damgalı (adları değişince
+     içerikleri de değişir), bu yüzden sonsuza kadar saklanabilir.
+   - Diğer statik dosyalar (ikon, logo): önce önbellek, arkada
+     tazele.
+
+   Böylece internet varken HER ZAMAN en güncel sürüm görünür.
    ============================================================ */
 
-const ONBELLEK = "duru-atolye-v1";
-
-/* Kurulumda peşinen alınacaklar — hepsi olmasa da kurulum başarısız olmasın */
-const TEMEL = ["/", "/ciz", "/muze", "/kitaplik", "/icon-192.png", "/logo.png"];
+const SURUM = "v3";
+const KABUK = `atolye-kabuk-${SURUM}`;
+const VARLIK = `atolye-varlik-${SURUM}`;
+const CEVRIMDISI = "/cevrimdisi.html";
 
 self.addEventListener("install", (olay) => {
   olay.waitUntil(
     caches
-      .open(ONBELLEK)
-      .then((o) => Promise.allSettled(TEMEL.map((y) => o.add(y))))
+      .open(KABUK)
+      .then((o) =>
+        Promise.allSettled([
+          o.add(CEVRIMDISI),
+          o.add("/icon-192.png"),
+          o.add("/logo.png"),
+        ]),
+      )
       .then(() => self.skipWaiting()),
   );
 });
 
 self.addEventListener("activate", (olay) => {
   olay.waitUntil(
-    caches
-      .keys()
-      .then((adlar) =>
-        Promise.all(adlar.filter((a) => a !== ONBELLEK).map((a) => caches.delete(a))),
-      )
-      .then(() => self.clients.claim()),
+    (async () => {
+      // Bu sürüme ait olmayan TÜM önbellekleri sil
+      const adlar = await caches.keys();
+      await Promise.all(
+        adlar.filter((a) => a !== KABUK && a !== VARLIK).map((a) => caches.delete(a)),
+      );
+      // Tarayıcı desteği varsa gezinme ön yüklemesini aç
+      if (self.registration.navigationPreload) {
+        await self.registration.navigationPreload.enable();
+      }
+      await self.clients.claim();
+    })(),
   );
+});
+
+/* Sayfa "hemen güncelle" derse bekleyen çalışanı devreye al */
+self.addEventListener("message", (olay) => {
+  if (olay.data === "HEMEN_GECER") self.skipWaiting();
 });
 
 self.addEventListener("fetch", (olay) => {
   const istek = olay.request;
-
-  // Sadece kendi sitemizin GET isteklerini yönetiyoruz
   if (istek.method !== "GET") return;
+
   let adres;
   try {
     adres = new URL(istek.url);
@@ -46,31 +70,60 @@ self.addEventListener("fetch", (olay) => {
   }
   if (adres.origin !== self.location.origin) return;
 
-  olay.respondWith(
-    fetch(istek)
-      .then((yanit) => {
-        // Başarılı yanıtı sessizce önbelleğe al
-        if (yanit && yanit.status === 200 && yanit.type === "basic") {
-          const kopya = yanit.clone();
-          caches
-            .open(ONBELLEK)
-            .then((o) => o.put(istek, kopya))
-            .catch(() => {});
+  /* --- 1) Sayfa istekleri: HER ZAMAN ağdan, asla önbellekten --- */
+  if (istek.mode === "navigate") {
+    olay.respondWith(
+      (async () => {
+        try {
+          const onYukleme = await olay.preloadResponse;
+          if (onYukleme) return onYukleme;
+          return await fetch(istek);
+        } catch {
+          const kabuk = await caches.open(KABUK);
+          return (
+            (await kabuk.match(CEVRIMDISI)) ??
+            new Response("Çevrimdışısın.", {
+              status: 503,
+              headers: { "Content-Type": "text/plain; charset=utf-8" },
+            })
+          );
         }
-        return yanit;
-      })
-      .catch(async () => {
-        const kayitli = await caches.match(istek);
+      })(),
+    );
+    return;
+  }
+
+  /* --- 2) İçerik damgalı paketler: önbellekten ver, yoksa indir --- */
+  if (adres.pathname.startsWith("/_next/static/")) {
+    olay.respondWith(
+      (async () => {
+        const o = await caches.open(VARLIK);
+        const kayitli = await o.match(istek);
         if (kayitli) return kayitli;
-        // Sayfa isteğiyse ana sayfayı göster, en azından uygulama açılsın
-        if (istek.mode === "navigate") {
-          const ana = await caches.match("/");
-          if (ana) return ana;
-        }
-        return new Response("Çevrimdışısın ve bu sayfa henüz kaydedilmemiş.", {
-          status: 503,
-          headers: { "Content-Type": "text/plain; charset=utf-8" },
-        });
-      }),
-  );
+        const yanit = await fetch(istek);
+        if (yanit.ok) o.put(istek, yanit.clone());
+        return yanit;
+      })(),
+    );
+    return;
+  }
+
+  /* --- 3) Diğer statikler: önbellekten ver, arkada tazele --- */
+  if (/\.(png|jpg|jpeg|svg|webp|ico|woff2?)$/i.test(adres.pathname)) {
+    olay.respondWith(
+      (async () => {
+        const o = await caches.open(VARLIK);
+        const kayitli = await o.match(istek);
+        const agdan = fetch(istek)
+          .then((y) => {
+            if (y.ok) o.put(istek, y.clone());
+            return y;
+          })
+          .catch(() => null);
+        return kayitli ?? (await agdan) ?? new Response("", { status: 504 });
+      })(),
+    );
+  }
+
+  /* Geri kalan her şey (API çağrıları dahil) doğrudan ağa gider */
 });

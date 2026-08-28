@@ -123,7 +123,7 @@ export function AtolyeSaglayici({ children }: { children: React.ReactNode }) {
     sb.auth.getSession().then(({ data }) => {
       if (iptal) return;
       setOturum(data.session);
-      if (!data.session) setDurum("girissiz");
+      setDurum(data.session ? "yukleniyor" : "girissiz");
     });
 
     const { data: abone } = sb.auth.onAuthStateChange((_olay, o) => {
@@ -134,7 +134,12 @@ export function AtolyeSaglayici({ children }: { children: React.ReactNode }) {
         setSeri(0);
         setBugunYapildi(false);
         setDurum("girissiz");
+        return;
       }
+      /* Oturum geldi ama veri henüz yüklenmedi. Burayı "girissiz"
+         bırakırsak kapı kullanıcıyı giriş sayfasına geri atar —
+         giriş yapılamıyor gibi görünür. "yukleniyor" doğru durum. */
+      setDurum((d) => (d === "hazir" ? d : "yukleniyor"));
     });
 
     return () => {

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Çevrimdışısın — Duru'nun Atölyesi</title>
+<style>
+  :root { color-scheme: light; }
+  body{
+    margin:0; min-height:100dvh; display:grid; place-items:center; padding:24px;
+    background:
+      radial-gradient(1200px 600px at 15% -5%, #fde8f6 0%, transparent 60%),
+      radial-gradient(900px 500px at 95% 0%, #e6f0ff 0%, transparent 55%),
+      #faf5ff;
+    color:#2e1065;
+    font-family:'Nunito Sans','Segoe UI',system-ui,sans-serif;
+    text-align:center;
+  }
+  .kutu{
+    max-width:420px; padding:32px 24px; border-radius:22px; background:#fff;
+    border:3px solid #fff;
+    box-shadow:
+      inset -3px -4px 9px rgba(124,58,237,.07),
+      inset 3px 4px 9px rgba(255,255,255,.95),
+      0 6px 0 rgba(124,58,237,.16),
+      0 14px 26px -12px rgba(46,16,101,.28);
+  }
+  .ikon{
+    width:76px; height:76px; margin:0 auto 18px; border-radius:22px;
+    background:rgba(255,201,60,.25); display:grid; place-items:center; font-size:36px;
+  }
+  h1{ margin:0 0 8px; font-size:24px; line-height:1.2; }
+  p{ margin:0 0 22px; font-size:15px; font-weight:600; color:#6b5b95; line-height:1.55; }
+  button{
+    font:inherit; font-weight:800; font-size:17px; color:#fff; cursor:pointer;
+    min-height:52px; padding:13px 26px; border-radius:22px;
+    border:3px solid rgba(255,255,255,.6); background:#7c3aed;
+    box-shadow:0 6px 0 rgba(46,16,101,.28), 0 12px 22px -10px rgba(46,16,101,.5);
+    transition:transform .18s cubic-bezier(.34,1.56,.64,1);
+  }
+  button:active{ transform:translateY(6px); box-shadow:0 0 0 rgba(46,16,101,.28); }
+  @media (prefers-reduced-motion: reduce){ *{ transition:none !important; } }
+</style>
+</head>
+<body>
+  <main class="kutu">
+    <div class="ikon" aria-hidden="true">🌙</div>
+    <h1>İnternet yok gibi görünüyor</h1>
+    <p>
+      Atölyen kayıp değil — çizimlerin ve kitapların güvende.
+      İnternete bağlanınca hepsi geri gelecek.
+    </p>
+    <button type="button" onclick="location.reload()">Tekrar dene</button>
+  </main>
+</body>
+</html>
