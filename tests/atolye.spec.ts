@@ -115,11 +115,14 @@ test("silgi, geri al ve temizle çalışır", async ({ page }) => {
   await cizgiCiz(page);
   await expect(geriAl).toBeEnabled();
 
-  // Silgi açılıp kapanabilmeli
+  // Araç paleti: silgiye basınca seçilir, fırçaya basınca bırakılır
+  const firca = page.getByRole("button", { name: "Fırça" });
   await silgi.click();
   await expect(silgi).toHaveAttribute("aria-pressed", "true");
-  await silgi.click();
+  await expect(firca).toHaveAttribute("aria-pressed", "false");
+  await firca.click();
   await expect(silgi).toHaveAttribute("aria-pressed", "false");
+  await expect(firca).toHaveAttribute("aria-pressed", "true");
 
   // Geri alınca tuval boşalır → kaydet tekrar kapanır
   await geriAl.click();
@@ -133,9 +136,18 @@ test("renk ve fırça kalınlığı seçilebilir", async ({ page }) => {
   await pembe.click();
   await expect(pembe).toHaveAttribute("aria-pressed", "true");
 
-  const kalin = page.getByRole("button", { name: "Fırça kalınlığı 34" });
+  const kalin = page.getByRole("button", { name: "Çok kalın çizgi" });
   await kalin.click();
   await expect(kalin).toHaveAttribute("aria-pressed", "true");
+
+  // Kaydırıcı hazır boyuta uymalı ve ince ayar yapılabilmeli
+  const kaydirici = page.getByRole("slider", { name: "Çizgi kalınlığı" });
+  await expect(kaydirici).toHaveValue("30");
+
+  await kaydirici.fill("7");
+  await expect(kaydirici).toHaveValue("7");
+  await expect(kalin).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByText("7", { exact: true })).toBeVisible();
 });
 
 test("müzede kalp verilir ve sayı artar", async ({ page }) => {
@@ -255,6 +267,172 @@ test("butona basınca claymorphism çökme efekti var", async ({ page }) => {
 
   const gecis = await buton.evaluate((e) => getComputedStyle(e).transitionDuration);
   expect(gecis).not.toBe("0s");
+});
+
+/* ---------------- Yeni çizim araçları ---------------- */
+
+test("ileri al, geri alınan çizgiyi geri getirir", async ({ page }) => {
+  await page.goto("/ciz");
+  const geriAl = page.getByRole("button", { name: "Geri al" });
+  const ileriAl = page.getByRole("button", { name: "İleri al" });
+  const kaydet = page.getByRole("button", { name: /Müzeye as/i });
+
+  await expect(ileriAl).toBeDisabled();
+
+  await cizgiCiz(page);
+  await geriAl.click();
+  await expect(kaydet).toBeDisabled();
+  await expect(ileriAl).toBeEnabled();
+
+  await ileriAl.click();
+  await expect(kaydet).toBeEnabled();
+  await expect(ileriAl).toBeDisabled();
+});
+
+test("dolgu ve damlalık araçları seçilebilir", async ({ page }) => {
+  await page.goto("/ciz");
+  // Tuval hazır olmadan araçlara basmak yarış durumu yaratıyor
+  await expect(page.getByRole("img", { name: /Çizim alanı/i })).toBeVisible();
+
+  const dolgu = page.getByRole("button", { name: "Boya dök" });
+  await dolgu.click();
+  await expect(dolgu).toHaveAttribute("aria-pressed", "true");
+
+  const damlalik = page.getByRole("button", { name: "Renk kap" });
+  await damlalik.click();
+  await expect(damlalik).toHaveAttribute("aria-pressed", "true");
+  await expect(dolgu).toHaveAttribute("aria-pressed", "false");
+});
+
+test("yakınlaştırma çalışır ve sıfırlanır", async ({ page }) => {
+  await page.goto("/ciz");
+  const sifirla = page.getByRole("button", { name: "Görünümü sıfırla" });
+
+  await expect(sifirla).toContainText("1.0x");
+  await expect(sifirla).toBeDisabled();
+
+  await page.getByRole("button", { name: "Yakınlaştır" }).click();
+  await expect(sifirla).toContainText("1.5x");
+  await expect(sifirla).toBeEnabled();
+
+  await sifirla.click();
+  await expect(sifirla).toContainText("1.0x");
+});
+
+test("tam ekran çizim modu açılıp kapanır", async ({ page }) => {
+  await page.goto("/ciz");
+
+  await page.getByRole("button", { name: "Tam ekran çiz" }).click();
+  const cik = page.getByRole("button", { name: "Tam ekrandan çık" });
+  await expect(cik).toBeVisible();
+  // Tam ekranda tuval hâlâ çizilebilir olmalı
+  await expect(page.getByRole("img", { name: /Çizim alanı/i })).toBeVisible();
+
+  await cik.click();
+  await expect(page.getByRole("button", { name: "Tam ekran çiz" })).toBeVisible();
+});
+
+test("yarım kalan çizim taslak olarak geri gelir", async ({ page }) => {
+  await page.goto("/ciz");
+  await cizgiCiz(page);
+  await expect
+    .poll(async () =>
+      page.evaluate(() => !!localStorage.getItem("duru.atolye.taslak")),
+    )
+    .toBe(true);
+
+  // Sayfadan çık, sonra geri dön
+  await page.goto("/muze");
+  await page.goto("/ciz");
+
+  await expect(page.getByText("Yarım kalan çizimin geri yüklendi.")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Müzeye as/i })).toBeEnabled();
+});
+
+/* ---------------- Kitap: kaydetme, okuma, ses ---------------- */
+
+test("kitapta kaydedildi göstergesi ve kelime sayısı çalışır", async ({ page }) => {
+  await page.goto("/kitaplik");
+  await page.getByRole("button", { name: /Konuşan kedi kitabıyla başla/i }).click();
+  await expect(page).toHaveURL(/\/kitap\//);
+
+  await page.getByLabel("Sayfa 1 metni").fill("Bir varmış bir yokmuş kedi konuşmuş");
+  await expect(page.getByText("Kaydedildi")).toBeVisible();
+  await expect(page.getByText("6 kelime")).toBeVisible();
+});
+
+test("okuma modu açılır ve sayfalar çevrilir", async ({ page }) => {
+  await page.goto("/kitaplik");
+  await page.getByLabel("Yeni kitap başlat").fill("Okuma Testi");
+  await page.getByRole("button", { name: "Kitabı oluştur" }).click();
+  await expect(page).toHaveURL(/\/kitap\//);
+
+  await page.getByLabel("Sayfa 1 metni").fill("Birinci sayfa yazısı");
+  await page.getByRole("button", { name: "Yeni sayfa ekle" }).click();
+  await page.getByLabel("Sayfa 2 metni").fill("İkinci sayfa yazısı");
+
+  await page.getByRole("button", { name: "Oku", exact: true }).click();
+
+  // Okuyucu bir dialog — arkadaki düzenleme ekranıyla karışmasın diye
+  // bütün beklentileri onun içine kapsıyoruz
+  const okuyucu = page.getByRole("dialog", { name: /okuma modu/i });
+  await expect(okuyucu).toBeVisible();
+  await expect(okuyucu.getByText("İkinci sayfa yazısı")).toBeVisible();
+  await expect(okuyucu.getByRole("button", { name: "Bana sesli oku" })).toBeVisible();
+
+  await okuyucu.getByRole("button", { name: "Önceki sayfa" }).click();
+  await expect(okuyucu.getByText("Birinci sayfa yazısı")).toBeVisible();
+
+  await okuyucu.getByRole("button", { name: "Okumayı bitir" }).click();
+  await expect(okuyucu).toBeHidden();
+  await expect(page.getByLabel("Sayfa 1 metni")).toBeVisible();
+});
+
+/* ---------------- Tablete indirilebilirlik (PWA) ---------------- */
+
+test("uygulama tanımı yayınlanıyor ve ikonları doğru", async ({ page }) => {
+  const yanit = await page.request.get("/manifest.webmanifest");
+  expect(yanit.ok()).toBe(true);
+
+  const m = await yanit.json();
+  expect(m.name).toBe("Duru'nun Atölyesi");
+  expect(m.display).toBe("standalone");
+  expect(m.start_url).toBe("/");
+  // Kurulabilirlik için 192 ve 512 ikonu şart
+  const boyutlar = m.icons.map((i: { sizes: string }) => i.sizes);
+  expect(boyutlar).toContain("192x192");
+  expect(boyutlar).toContain("512x512");
+  // Android maskeleme için maskable ikon
+  expect(m.icons.some((i: { purpose?: string }) => i.purpose === "maskable")).toBe(true);
+});
+
+test("servis çalışanı dosyası erişilebilir", async ({ page }) => {
+  const yanit = await page.request.get("/sw.js");
+  expect(yanit.ok()).toBe(true);
+  const kod = await yanit.text();
+  // Kurulabilirlik için fetch dinleyicisi zorunlu
+  expect(kod).toContain('addEventListener("fetch"');
+});
+
+/* ---------------- Sayfa çevirme animasyonu ---------------- */
+
+test("kitap sayfası çevrilirken 3B animasyon uygulanıyor", async ({ page }) => {
+  await page.goto("/kitaplik");
+  await page.getByLabel("Yeni kitap başlat").fill("Animasyon Kitabı");
+  await page.getByRole("button", { name: "Kitabı oluştur" }).click();
+  await expect(page).toHaveURL(/\/kitap\//);
+
+  await page.getByRole("button", { name: "Yeni sayfa ekle" }).click();
+
+  const sayfa = page.locator(".sayfa-ileri").first();
+  await expect(sayfa).toBeVisible();
+  const ad = await sayfa.evaluate((e) => getComputedStyle(e).animationName);
+  expect(ad).toBe("sayfaIleri");
+
+  await page.getByRole("button", { name: "Önceki sayfa" }).click();
+  const geri = page.locator(".sayfa-geri").first();
+  const adGeri = await geri.evaluate((e) => getComputedStyle(e).animationName);
+  expect(adGeri).toBe("sayfaGeri");
 });
 
 test("hareket azaltma ayarı açıkken animasyonlar kapanıyor", async ({ browser }) => {

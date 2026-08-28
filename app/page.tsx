@@ -1,11 +1,17 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import Ikon from "@/components/Ikon";
 import AltMenu from "@/components/AltMenu";
+import Konfeti from "@/components/Konfeti";
+import IndirButonu from "@/components/IndirButonu";
 import { cerceveNo, seri, useDepo } from "@/lib/depo";
 import { gununGorevi } from "@/lib/gorevler";
+
+/* Seri bu sayılara ulaşınca konfeti at — her gün değil, hak edince */
+const DONUM_NOKTALARI = [3, 7, 14, 21, 30, 50, 75, 100];
 
 export default function Atolye() {
   const { depo, hazir } = useDepo();
@@ -13,9 +19,31 @@ export default function Atolye() {
   const gunSeri = seri(depo.gunler);
   const sonCizimler = depo.cizimler.slice(0, 6);
 
+  const [kutla, setKutla] = useState(false);
+
+  /* Seri bir öncekinden büyükse kutla — aynı gün tekrar girince kutlamaz */
+  useEffect(() => {
+    if (!hazir || gunSeri < 1) return;
+    let z: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const onceki = Number(localStorage.getItem("duru.sonSeri") ?? 0);
+      if (gunSeri > onceki) {
+        localStorage.setItem("duru.sonSeri", String(gunSeri));
+        setKutla(true);
+        z = setTimeout(() => setKutla(false), 2600);
+      }
+    } catch {
+      /* hafıza kapalı — kutlamayı atla, sayfa normal çalışsın */
+    }
+    return () => clearTimeout(z);
+  }, [hazir, gunSeri]);
+
+  const donumNoktasi = kutla && DONUM_NOKTALARI.includes(gunSeri);
+
   return (
     <>
-      <main className="mx-auto w-full max-w-lg flex-1 px-4 pt-6 pb-4">
+      {donumNoktasi && <Konfeti adet={54} />}
+      <main className="giris mx-auto w-full max-w-lg flex-1 px-4 pt-6 pb-4">
         {/* ---------- Selamlama ---------- */}
         <header className="mb-5 flex items-center gap-3">
           <div className="clay flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden !p-0">
@@ -37,7 +65,11 @@ export default function Atolye() {
             </h1>
           </div>
           {gunSeri > 0 && (
-            <div className="clay-soft flex shrink-0 items-center gap-1.5 px-3 py-2">
+            <div
+              className={`clay-soft flex shrink-0 items-center gap-1.5 rounded-[16px] px-3 py-2 ${
+                kutla ? "seri-parla" : ""
+              }`}
+            >
               <Ikon ad="yildiz" boyut={19} dolu className="text-gk3" />
               <span className="font-display text-lg font-extrabold tabular-nums text-ink">
                 {gunSeri}
@@ -117,6 +149,9 @@ export default function Atolye() {
             </span>
           </Link>
         </div>
+
+        {/* ---------- Tablete indir (sadece kurulabiliyorsa görünür) ---------- */}
+        <IndirButonu />
 
         {/* ---------- Son çizimler ---------- */}
         {hazir && sonCizimler.length > 0 && (

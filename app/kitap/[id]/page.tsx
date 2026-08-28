@@ -15,7 +15,61 @@ export default function KitapSayfasi() {
   const [no, setNo] = useState(0);
   const [metin, setMetin] = useState("");
   const [secici, setSecici] = useState(false);
+  /* Sayfa hangi yöne çevriliyor — animasyonun yönünü belirler */
+  const [yon, setYon] = useState<"ileri" | "geri">("ileri");
+  const [okuma, setOkuma] = useState(false);
+  const [durum, setDurum] = useState<"bos" | "yaziliyor" | "kaydedildi">("bos");
+  const [okunuyor, setOkunuyor] = useState(false);
   const yuklendi = useRef(false);
+  /* Henüz diske yazılmamış metin. Sayfa değişmeden önce mutlaka boşaltılır,
+     yoksa hızlı yazıp hemen sayfa çeviren biri yazdığını kaybeder. */
+  const bekleyenRef = useRef<{ sayfaId: string; metin: string } | null>(null);
+
+  function hemenKaydet() {
+    const b = bekleyenRef.current;
+    if (!b || !kitap) return;
+    bekleyenRef.current = null;
+    kitapGuncelle(kitap.id, (k) => ({
+      ...k,
+      sayfalar: k.sayfalar.map((s) =>
+        s.id === b.sayfaId ? { ...s, metin: b.metin } : s,
+      ),
+    }));
+    setDurum("kaydedildi");
+  }
+
+  function sayfayaGit(hedef: number) {
+    hemenKaydet();
+    setYon(hedef > no ? "ileri" : "geri");
+    setNo(hedef);
+    sesiDurdur();
+  }
+
+  /* ---------- Sesli okuma (tarayıcının kendi sesi, ücretsiz) ---------- */
+
+  function sesiDurdur() {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    setOkunuyor(false);
+  }
+
+  function sesliOku(yazi: string) {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    if (okunuyor) {
+      sesiDurdur();
+      return;
+    }
+    const s = new SpeechSynthesisUtterance(yazi);
+    s.lang = "tr-TR";
+    s.rate = 0.92; // çocuk için biraz yavaş
+    s.onend = () => setOkunuyor(false);
+    s.onerror = () => setOkunuyor(false);
+    window.speechSynthesis.speak(s);
+    setOkunuyor(true);
+  }
+
+  /* Sayfadan ayrılırken ses devam etmesin */
+  useEffect(() => () => sesiDurdur(), []);
 
   const sayfa = kitap?.sayfalar[no];
 
@@ -32,13 +86,13 @@ export default function KitapSayfasi() {
       yuklendi.current = true;
       return;
     }
-    if (metin === sayfa.metin) return;
-    const z = setTimeout(() => {
-      kitapGuncelle(kitap.id, (k) => ({
-        ...k,
-        sayfalar: k.sayfalar.map((s) => (s.id === sayfa.id ? { ...s, metin } : s)),
-      }));
-    }, 600);
+    if (metin === sayfa.metin) {
+      // Sadece BU sayfanın bekleyenini temizle — başka sayfanınkine dokunma
+      if (bekleyenRef.current?.sayfaId === sayfa.id) bekleyenRef.current = null;
+      return;
+    }
+    setDurum("yaziliyor");
+    const z = setTimeout(hemenKaydet, 600);
     return () => clearTimeout(z);
   }, [metin]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -71,21 +125,32 @@ export default function KitapSayfasi() {
   const sonSayfa = kitap.sayfalar.length - 1;
 
   function sayfaEkle() {
+    // Önce bekleyen yazıyı kaydet — yoksa bu sayfada yazdığı kaybolur
+    hemenKaydet();
     kitapGuncelle(kitap!.id, (k) => ({
       ...k,
       sayfalar: [...k.sayfalar, { id: yeniId(), metin: "" }],
     }));
+    setYon("ileri");
     setNo(kitap!.sayfalar.length);
   }
 
   function sayfaSil() {
     if (kitap!.sayfalar.length <= 1) return;
     const silinen = sayfa!.id;
+    bekleyenRef.current = null; // silinen sayfanın yazısını geri yazma
     kitapGuncelle(kitap!.id, (k) => ({
       ...k,
       sayfalar: k.sayfalar.filter((s) => s.id !== silinen),
     }));
+    setYon("geri");
     setNo((n) => Math.max(0, n - 1));
+  }
+
+  /* Okuma moduna geçmeden de kaydet — okurken son yazdığını görsün */
+  function okumayaGec() {
+    hemenKaydet();
+    setOkuma(true);
   }
 
   function resimSec(cizimId?: string) {
@@ -99,7 +164,7 @@ export default function KitapSayfasi() {
 
   return (
     <>
-      <main className="mx-auto w-full max-w-lg flex-1 px-4 pt-5 pb-4">
+      <main className="giris mx-auto w-full max-w-lg flex-1 px-4 pt-5 pb-4">
         {/* ---------- Başlık ---------- */}
         <header className="mb-4 flex items-center gap-3">
           <Link
@@ -120,8 +185,11 @@ export default function KitapSayfasi() {
           />
         </header>
 
-        {/* ---------- Sayfa ---------- */}
-        <section className="clay mb-3 p-4">
+        {/* ---------- Sayfa ----------
+            key={sayfa.id} sayesinde sayfa değişince bileşen yeniden
+            bağlanıyor, animasyon da her seferinde baştan çalışıyor. */}
+        <div className="perspektif mb-3">
+        <section key={sayfa.id} className={`clay p-4 sayfa-${yon}`}>
           {/* Resim alanı */}
           {resim ? (
             <div className={`cerceve cerceve-n${cerceveNo(resim.id)} mb-4`}>
@@ -171,18 +239,59 @@ export default function KitapSayfasi() {
           <textarea
             id="sayfa-metni"
             value={metin}
-            onChange={(e) => setMetin(e.target.value)}
+            onChange={(e) => {
+              setMetin(e.target.value);
+              /* Bekleyeni efekte bırakmıyoruz: efekt bir sonraki render'da
+                 çalışıyor ve arada sayfa değiştirilirse yazı kayboluyordu.
+                 Tuşa basıldığı anda yakalıyoruz. */
+              bekleyenRef.current = { sayfaId: sayfa.id, metin: e.target.value };
+            }}
             placeholder="Hikâyeni buraya yaz…"
             rows={7}
             className="clay-input resize-y leading-[1.7]"
           />
         </section>
+        </div>
+
+        {/* ---------- Durum çubuğu: kaydedildi mi, kaç kelime ---------- */}
+        <div className="mb-3 flex items-center gap-3 px-1 text-[13px] font-bold">
+          <span
+            aria-live="polite"
+            className={
+              durum === "kaydedildi"
+                ? "flex items-center gap-1.5 text-basari"
+                : durum === "yaziliyor"
+                  ? "nabiz flex items-center gap-1.5 text-inksoft"
+                  : "text-transparent"
+            }
+          >
+            {durum === "kaydedildi" && <Ikon ad="onay" boyut={15} />}
+            {durum === "kaydedildi"
+              ? "Kaydedildi"
+              : durum === "yaziliyor"
+                ? "Kaydediliyor…"
+                : "."}
+          </span>
+
+          <span className="ml-auto tabular-nums text-inksoft">
+            {metin.trim() ? metin.trim().split(/\s+/).length : 0} kelime
+          </span>
+
+          <button
+            type="button"
+            onClick={okumayaGec}
+            className="flex cursor-pointer items-center gap-1.5 rounded-[10px] px-2 py-1 text-mor underline underline-offset-4"
+          >
+            <Ikon ad="kitap" boyut={15} />
+            Oku
+          </button>
+        </div>
 
         {/* ---------- Sayfa gezinme ---------- */}
         <div className="clay-soft flex items-center gap-2 p-2.5">
           <button
             type="button"
-            onClick={() => setNo((n) => Math.max(0, n - 1))}
+            onClick={() => sayfayaGit(Math.max(0, no - 1))}
             disabled={no === 0}
             className="clay-btn kucuk beyaz"
             aria-label="Önceki sayfa"
@@ -197,7 +306,7 @@ export default function KitapSayfasi() {
           {no < sonSayfa ? (
             <button
               type="button"
-              onClick={() => setNo((n) => n + 1)}
+              onClick={() => sayfayaGit(no + 1)}
               className="clay-btn kucuk beyaz"
               aria-label="Sonraki sayfa"
             >
@@ -227,17 +336,96 @@ export default function KitapSayfasi() {
         )}
       </main>
 
+      {/* ---------- Okuma modu ---------- */}
+      {okuma && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${kitap.baslik} — okuma modu`}
+          className="fon-ac fixed inset-0 z-50 flex flex-col bg-ground p-4 pb-[max(16px,env(safe-area-inset-bottom))]"
+        >
+          <div className="mx-auto flex w-full max-w-lg items-center gap-3 pb-3">
+            <button
+              type="button"
+              onClick={() => {
+                setOkuma(false);
+                sesiDurdur();
+              }}
+              aria-label="Okumayı bitir"
+              className="clay flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center text-mor"
+            >
+              <Ikon ad="geri" boyut={22} />
+            </button>
+            <h2 className="min-w-0 flex-1 truncate text-xl text-ink">{kitap.baslik}</h2>
+            <button
+              type="button"
+              onClick={() => sesliOku(sayfa.metin || "Bu sayfa henüz boş.")}
+              aria-label={okunuyor ? "Okumayı durdur" : "Bana sesli oku"}
+              aria-pressed={okunuyor}
+              className={`clay-btn kucuk ${okunuyor ? "pembe" : "beyaz"}`}
+            >
+              <Ikon ad={okunuyor ? "cop" : "yildiz"} boyut={18} dolu={!okunuyor} />
+              {okunuyor ? "Dur" : "Oku"}
+            </button>
+          </div>
+
+          <div className="perspektif mx-auto flex w-full max-w-lg flex-1 overflow-y-auto">
+            <section key={sayfa.id} className={`clay w-full p-5 sayfa-${yon}`}>
+              {resim && (
+                <div className={`cerceve cerceve-n${cerceveNo(resim.id)} mb-5`}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={resim.veri}
+                    alt={resim.baslik}
+                    className="aspect-square w-full rounded-[12px] bg-white object-cover"
+                  />
+                </div>
+              )}
+              <p className="whitespace-pre-wrap text-[19px] leading-[1.75] text-ink">
+                {sayfa.metin || (
+                  <span className="italic text-inksoft">Bu sayfa henüz boş.</span>
+                )}
+              </p>
+            </section>
+          </div>
+
+          <div className="mx-auto flex w-full max-w-lg items-center gap-2 pt-3">
+            <button
+              type="button"
+              onClick={() => sayfayaGit(Math.max(0, no - 1))}
+              disabled={no === 0}
+              className="clay-btn beyaz"
+              aria-label="Önceki sayfa"
+            >
+              <Ikon ad="sol" boyut={20} />
+            </button>
+            <span className="flex-1 text-center font-display text-base font-bold tabular-nums text-ink">
+              {no + 1} / {kitap.sayfalar.length}
+            </span>
+            <button
+              type="button"
+              onClick={() => sayfayaGit(no + 1)}
+              disabled={no >= sonSayfa}
+              className="clay-btn beyaz"
+              aria-label="Sonraki sayfa"
+            >
+              <Ikon ad="sag" boyut={20} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ---------- Müzeden resim seçici ---------- */}
       {secici && (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-ink/45 p-3 backdrop-blur-sm sm:items-center"
+          className="fon-ac fixed inset-0 z-50 flex items-end justify-center bg-ink/45 p-3 backdrop-blur-sm sm:items-center"
           onClick={() => setSecici(false)}
           role="dialog"
           aria-modal="true"
           aria-label="Müzenden resim seç"
         >
           <div
-            className="clay max-h-[85dvh] w-full max-w-md overflow-y-auto p-4"
+            className="clay pencere-ac max-h-[85dvh] w-full max-w-md overflow-y-auto p-4"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="mb-3 text-xl text-ink">Müzenden bir resim seç</h2>

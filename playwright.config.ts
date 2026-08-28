@@ -3,6 +3,9 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: true,
+  /* 6 işçide tuval testleri tarayıcıyı çökertiyordu (her biri kendi
+     canvas belleğini ayırıyor). 3 işçi hem hızlı hem kararlı. */
+  workers: 3,
   retries: process.env.CI ? 2 : 0,
   reporter: [["list"]],
   use: {

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Baloo_2, Nunito_Sans } from "next/font/google";
+import PWA from "@/components/PWA";
 import "./globals.css";
 
 /* Başlık yazısı — yuvarlak, oyuncak gibi, karakterli */
@@ -71,7 +72,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="tr"
       className={`${baloo.variable} ${nunito.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <PWA />
+        {children}
+      </body>
     </html>
   );
 }

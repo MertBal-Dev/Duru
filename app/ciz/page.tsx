@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Ikon from "@/components/Ikon";
 import AltMenu from "@/components/AltMenu";
 import Tuval from "@/components/Tuval";
-import { useDepo } from "@/lib/depo";
+import Konfeti from "@/components/Konfeti";
+import { cerceveNo, useDepo } from "@/lib/depo";
 import { gununGorevi } from "@/lib/gorevler";
 
 export default function CizSayfasi() {
@@ -17,16 +18,21 @@ export default function CizSayfasi() {
   const [bekleyen, setBekleyen] = useState<string | null>(null);
   const [baslik, setBaslik] = useState("");
   const [hata, setHata] = useState<string | null>(null);
+  const [kutlama, setKutlama] = useState<{ id: string; ad: string } | null>(null);
+
+  /* Kutlama bitince müzeye geç — çizimin çerçeveye oturmasını izlesin */
+  useEffect(() => {
+    if (!kutlama) return;
+    const z = setTimeout(() => router.push("/muze"), 2100);
+    return () => clearTimeout(z);
+  }, [kutlama, router]);
 
   function asmayiTamamla() {
     if (!bekleyen) return;
+    const ad = baslik.trim() || "İsimsiz çizim";
     try {
-      cizimEkle({
-        baslik: baslik.trim() || "İsimsiz çizim",
-        veri: bekleyen,
-        gorev,
-      });
-      router.push("/muze");
+      const id = cizimEkle({ baslik: ad, veri: bekleyen, gorev });
+      setKutlama({ id, ad });
     } catch {
       setHata(
         "Çizim kaydedilemedi — tarayıcı hafızası dolmuş olabilir. Müzeden birkaç eski çizimi silip tekrar dene.",
@@ -34,9 +40,40 @@ export default function CizSayfasi() {
     }
   }
 
+  /* ---------- Kutlama ekranı ---------- */
+  if (kutlama && bekleyen) {
+    return (
+      <>
+        <Konfeti />
+        <main className="mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center px-6 py-10">
+          <div
+            className={`cerceve cerceve-n${cerceveNo(kutlama.id)} cerceve-otur w-full max-w-xs`}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={bekleyen}
+              alt={kutlama.ad}
+              className="aspect-square w-full rounded-[12px] bg-white object-cover"
+            />
+          </div>
+
+          <div className="yazi-belir mt-7 text-center">
+            <h1 className="mb-2 text-[30px] text-ink">Müzene asıldı!</h1>
+            <p className="font-display text-xl font-bold text-pembe">
+              “{kutlama.ad}”
+            </p>
+            <p className="nabiz mt-4 text-sm font-bold text-inksoft">
+              Müzene götürüyorum…
+            </p>
+          </div>
+        </main>
+      </>
+    );
+  }
+
   return (
     <>
-      <main className="mx-auto w-full max-w-lg flex-1 px-4 pt-5 pb-4">
+      <main className="giris mx-auto w-full max-w-lg flex-1 px-4 pt-5 pb-4">
         {/* ---------- Başlık ---------- */}
         <header className="mb-4 flex items-center gap-3">
           <Link
@@ -59,7 +96,7 @@ export default function CizSayfasi() {
 
         {/* ---------- İsim verme ---------- */}
         {bekleyen && (
-          <section className="clay p-5">
+          <section className="clay pencere-ac p-5">
             <h2 className="mb-1 text-xl text-ink">Çizimin hazır!</h2>
             <p className="mb-4 text-sm font-semibold text-inksoft">
               Ona bir isim ver, sonra müzendeki çerçevesine asalım.

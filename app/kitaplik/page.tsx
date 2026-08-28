@@ -45,7 +45,7 @@ export default function Kitaplik() {
 
   return (
     <>
-      <main className="mx-auto w-full max-w-lg flex-1 px-4 pt-5 pb-4">
+      <main className="giris mx-auto w-full max-w-lg flex-1 px-4 pt-5 pb-4">
         <header className="mb-5 flex items-center gap-3">
           <Link
             href="/"

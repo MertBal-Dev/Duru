@@ -10,6 +10,14 @@ export default function Muze() {
   const { depo, hazir, kalpAt, cizimSil, cizimAdiDegistir } = useDepo();
   const [acikId, setAcikId] = useState<string | null>(null);
   const [silOnay, setSilOnay] = useState(false);
+  /* Kalbe basınca yukarı uçan geçici kalp — n her basışta artar ki
+     animasyon üst üste basıldığında da baştan çalışsın */
+  const [ucan, setUcan] = useState<{ id: string; n: number } | null>(null);
+
+  function kalpVer(id: string) {
+    kalpAt(id);
+    setUcan((o) => ({ id, n: o && o.id === id ? o.n + 1 : 1 }));
+  }
 
   const acik = depo.cizimler.find((c) => c.id === acikId) ?? null;
 
@@ -27,7 +35,7 @@ export default function Muze() {
 
   return (
     <>
-      <main className="mx-auto w-full max-w-lg flex-1 px-4 pt-5 pb-4">
+      <main className="giris mx-auto w-full max-w-lg flex-1 px-4 pt-5 pb-4">
         {/* ---------- Başlık ---------- */}
         <header className="mb-5 flex items-center gap-3">
           <Link
@@ -92,15 +100,27 @@ export default function Muze() {
                   <span className="min-w-0 flex-1 truncate font-display text-[15px] font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]">
                     {c.baslik}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => kalpAt(c.id)}
-                    aria-label={`${c.baslik} çizimine kalp ver. Şu an ${c.kalp} kalp.`}
-                    className="flex h-9 min-w-9 cursor-pointer items-center gap-1 rounded-full bg-white/85 px-2 text-[13px] font-extrabold text-pembe transition-transform duration-200 active:scale-90"
-                  >
-                    <Ikon ad="kalp" boyut={15} dolu={c.kalp > 0} />
-                    {c.kalp > 0 && <span className="tabular-nums">{c.kalp}</span>}
-                  </button>
+                  <span className="relative">
+                    {ucan?.id === c.id && (
+                      <span key={ucan.n} aria-hidden="true" className="kalp-uc text-pembe">
+                        <Ikon ad="kalp" boyut={22} dolu />
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => kalpVer(c.id)}
+                      aria-label={`${c.baslik} çizimine kalp ver. Şu an ${c.kalp} kalp.`}
+                      className="flex h-9 min-w-9 cursor-pointer items-center gap-1 rounded-full bg-white/85 px-2 text-[13px] font-extrabold text-pembe transition-transform duration-200 active:scale-90"
+                    >
+                      <Ikon
+                        ad="kalp"
+                        boyut={15}
+                        dolu={c.kalp > 0}
+                        className={ucan?.id === c.id ? "kalp-zipla" : undefined}
+                      />
+                      {c.kalp > 0 && <span className="tabular-nums">{c.kalp}</span>}
+                    </button>
+                  </span>
                 </div>
               </li>
             ))}
@@ -111,14 +131,14 @@ export default function Muze() {
       {/* ---------- Tek çizim görünümü ---------- */}
       {acik && (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-ink/45 p-3 backdrop-blur-sm sm:items-center"
+          className="fon-ac fixed inset-0 z-50 flex items-end justify-center bg-ink/45 p-3 backdrop-blur-sm sm:items-center"
           onClick={kapat}
           role="dialog"
           aria-modal="true"
           aria-label={`${acik.baslik} çizimi`}
         >
           <div
-            className="clay max-h-[92dvh] w-full max-w-md overflow-y-auto p-4"
+            className="clay pencere-ac max-h-[92dvh] w-full max-w-md overflow-y-auto p-4"
             onClick={(e) => e.stopPropagation()}
           >
             <div className={`cerceve cerceve-n${cerceveNo(acik.id)} mb-4`}>
